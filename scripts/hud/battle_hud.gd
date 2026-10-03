@@ -108,6 +108,12 @@ func _setup_training_panel() -> void:
 	hints.add_theme_font_size_override("font_size", 13)
 	vbox.add_child(hints)
 
+	var hint2 := Label.new()
+	hint2.text = "指令: 半圈↓→(236)+轻击=特殊技 · 半圈+重击=必杀技 · F=推进(耗气)"
+	hint2.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8, 1))
+	hint2.add_theme_font_size_override("font_size", 13)
+	vbox.add_child(hint2)
+
 
 func _update_training_panel() -> void:
 	var dummy := p2 as TrainingDummy

@@ -49,6 +49,23 @@ var gravity := GlobalConfig.GRAVITY
 # F 推进技额外动量(逐帧衰减, 仅在执行动作时由 方向键+F 注入)
 var advance_velocity := Vector2.ZERO
 
+# ============ 数字方向(小键盘记法)指令 ============
+# 朝向相对(以对手方向为前)的指令序列, 用于识别必杀技输入:
+#   正半圈 QCF = 下(2) -> 下前(3) -> 前(6) = 236
+#   反半圈 QCB = 下(2) -> 下后(1) -> 后(4) = 214
+# 无论角色朝左朝右, 6 始终表示"朝对手方向"。
+const MOTION_QCF := [2, 3, 6]
+const MOTION_QCB := [2, 1, 4]
+
+# 允许被动回气的"自由/中立"状态(受击、攻击、倒地等不回气)
+const METER_REGEN_STATES := [
+	FighterState.State.IDLE, FighterState.State.WALK_FORWARD, FighterState.State.WALK_BACK,
+	FighterState.State.DASH_FORWARD, FighterState.State.DASH_BACK,
+	FighterState.State.CROUCH, FighterState.State.CROUCH_BLOCK, FighterState.State.STAND_BLOCK,
+	FighterState.State.JUMP_UP, FighterState.State.JUMP_FORWARD, FighterState.State.JUMP_BACK,
+	FighterState.State.WAKEUP,
+]
+
 # 输入缓冲
 var input_buffer := {}
 var buffer_timer := 0
@@ -226,6 +243,9 @@ func _physics_process(_delta: float) -> void:
 	# F 推进技: 仅在"执行动作"时, 方向键+F 注入额外动量(并提升攻击等级)
 	_try_f_boost()
 	
+	# 能量条: 中立/自由状态缓慢自动回气(攻击/受击/倒地时不回)
+	_tick_meter(_delta)
+	
 	match current_state:
 		FighterState.State.INTRO:
 			_process_intro()
@@ -272,6 +292,9 @@ func _physics_process(_delta: float) -> void:
 		advance_velocity *= GlobalConfig.F_ADVANCE_DECAY
 		if advance_velocity.length() < 4.0:
 			advance_velocity = Vector2.ZERO
+
+	# 调试标签实时刷新(状态/数字方向/等级)
+	_update_debug_label()
 
 
 # 限制在竞技场内, 保证摄像机始终能把双方框住
@@ -375,6 +398,7 @@ func _is_in_action() -> bool:
 # F 推进技核心:
 #   角色正在执行动作(移动/攻击/跳跃/投技)时, 按下 方向键 + F:
 #     - 向指定方向注入额外动量(advance_velocity), 让角色突进/斜冲
+#     - 消耗一定气量; 气量不足时本次推进无效
 #     - 若正处于攻击状态, 攻击等级 +1 (上限 LV5, 提升对手受击/防御硬直)
 #   无动作(待机等)时按 F 完全无影响
 func _try_f_boost() -> void:
@@ -382,6 +406,14 @@ func _try_f_boost() -> void:
 		return
 	if not _is_in_action():
 		return
+
+	# 训练无限气: 免消耗; 否则需够气量才能推进
+	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
+	if not training_infinite and meter < GlobalConfig.F_ADVANCE_METER_COST:
+		return
+	if not training_infinite:
+		meter -= GlobalConfig.F_ADVANCE_METER_COST
+		emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
 
 	# 取当前按住的方向向量(支持 上/下/左/右 及 斜向)
 	var dir := Vector2(
@@ -406,6 +438,55 @@ func _try_f_boost() -> void:
 		_flash_level_up()
 
 
+# ---------- 数字方向(小键盘记法)辅助 ----------
+
+# 当前"朝向相对"数字方向: 6 = 朝对手, 4 = 背对对手, 5 = 中立
+func _numpad_direction() -> int:
+	var d := InputHandler.get_numpad_direction(player_id)
+	if facing_right:
+		return d
+	return _flip_numpad_horizontal(d)
+
+
+# 将屏幕绝对数字方向水平翻转(角色朝左时, 右(6)变前(4)等)
+static func _flip_numpad_horizontal(d: int) -> int:
+	match d:
+		1:
+			return 3
+		3:
+			return 1
+		4:
+			return 6
+		6:
+			return 4
+		7:
+			return 9
+		9:
+			return 7
+		_:
+			return d   # 2/5/8 无横向分量, 不变
+
+
+# 子序列判定: needle 是否作为子序列出现在 hay 中(用于指令识别)
+static func _is_subsequence(hay: Array, needle: Array) -> bool:
+	var i := 0
+	for x in hay:
+		if x == needle[i]:
+			i += 1
+			if i >= needle.size():
+				return true
+	return false
+
+
+# 检测朝向相对指令是否在最近输入历史中出现(作为子序列)
+func _history_has_motion(steps: Array) -> bool:
+	var dirs := InputHandler.get_history_dirs(player_id)
+	var rel: Array = []
+	for d in dirs:
+		rel.append(_flip_numpad_horizontal(d) if not facing_right else d)
+	return _is_subsequence(rel, steps)
+
+
 # 升级时的视觉提示(Sprite 轻微放大脉冲 + 调试标签)
 func _flash_level_up() -> void:
 	_update_debug_label()
@@ -417,14 +498,18 @@ func _flash_level_up() -> void:
 		tw.tween_property(sprite, "scale", Vector2(2.0, 2.0), 0.12)
 
 
-# 更新调试标签: 状态名 + 当前攻击等级(仅 >LV1 时显示)
+# 更新调试标签: 状态名 + 当前数字方向 + 当前攻击等级(仅 >LV1 时显示)
 func _update_debug_label() -> void:
 	if not is_instance_valid(state_label):
 		return
 	var names := FighterState.State.keys()
 	var s: String = names[current_state] if current_state < names.size() else str(current_state)
+	# 数字方向(朝向相对): 仅在不中立时显示, 便于在 Godot 中验证 6/4/2/8 体系
+	var nd := _numpad_direction()
+	if nd != 5:
+		s += " %d" % nd
 	if attack_level > GlobalConfig.ATTACK_LEVEL_MIN:
-		s += "  Lv%d" % attack_level
+		s += " Lv%d" % attack_level
 	state_label.text = s
 
 
@@ -522,14 +607,21 @@ func _handle_universal_input() -> void:
 
 
 func _handle_attack_input() -> void:
-	# 必杀技(消耗气): B + C 同时按下
+	# 必杀技(消耗气): B + C 同时按下, 或 半圈(QCF) + 重击(C)
 	if _combo_pressed(InputHandler.InputButton.B, InputHandler.InputButton.C):
 		_try_start_super()
 		return
-	# 特殊技: A + B 同时按下
+	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C) and _history_has_motion(MOTION_QCF):
+		if _try_start_super(true):
+			return
+		# 气量不足时退化为普通重攻击
+	# 特殊技: A + B 同时按下, 或 半圈(QCF) + 轻击(A)
 	if _combo_pressed(InputHandler.InputButton.A, InputHandler.InputButton.B):
 		_try_start_special()
 		return
+	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) and _history_has_motion(MOTION_QCF):
+		if _try_start_special(true):
+			return
 	# 通常技
 	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A):
 		_start_attack(FighterState.State.ATTACK_LIGHT, light_attacks[0] if light_attacks.size() > 0 else null)
@@ -600,21 +692,23 @@ func _combo_pressed(x: int, y: int) -> bool:
 		or (InputHandler.is_just_pressed(player_id, y) and InputHandler.is_pressed(player_id, x))
 
 
-# 尝试以 特殊技(A+B) 起手/取消(不消耗气)
-func _try_start_special() -> bool:
+# 尝试以 特殊技(A+B 或 半圈+轻击) 起手/取消(不消耗气)
+#   force=true 时跳过 A+B 组合键检测(用于半圈指令触发)
+func _try_start_special(force := false) -> bool:
 	if special_attacks.is_empty():
 		return false
-	if not _combo_pressed(InputHandler.InputButton.A, InputHandler.InputButton.B):
+	if not force and not _combo_pressed(InputHandler.InputButton.A, InputHandler.InputButton.B):
 		return false
 	_start_attack(FighterState.State.ATTACK_SPECIAL, special_attacks[0] if special_attacks.size() > 0 else null)
 	return true
 
 
-# 尝试以 必杀技(B+C) 起手/取消(消耗气, 训练模式无限气可免消耗)
-func _try_start_super() -> bool:
+# 尝试以 必杀技(B+C 或 半圈+重击) 起手/取消(消耗气, 训练模式无限气可免消耗)
+#   force=true 时跳过 B+C 组合键检测(用于半圈指令触发)
+func _try_start_super(force := false) -> bool:
 	if super_attacks.is_empty():
 		return false
-	if not _combo_pressed(InputHandler.InputButton.B, InputHandler.InputButton.C):
+	if not force and not _combo_pressed(InputHandler.InputButton.B, InputHandler.InputButton.C):
 		return false
 	var atk: AttackData = super_attacks[0] if super_attacks.size() > 0 else null
 	if not atk:
@@ -818,6 +912,8 @@ func _take_damage(seg: AttackData.Segment, attack: AttackData, attacker: Fighter
 	_take_damage_raw(seg.damage)
 	if attack:
 		attacker._gain_meter(attack.meter_gain)
+	# 受击方按所受伤害比例回气(防守反哺)
+	_gain_meter(int(round(seg.damage * GlobalConfig.METER_GAIN_ON_DAMAGE_RATIO)))
 	attacker.combo_count += 1
 
 
@@ -838,6 +934,16 @@ func _take_damage_raw(damage: int) -> void:
 func _gain_meter(amount: int) -> void:
 	meter = min(meter + amount, GlobalConfig.MAX_METER)
 	emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
+
+
+# 气槽被动回充: 仅在"自由/中立"状态且非训练无限气时缓慢回气
+func _tick_meter(delta: float) -> void:
+	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
+	if current_state in METER_REGEN_STATES and not training_infinite:
+		var before := meter
+		meter = min(meter + int(round(GlobalConfig.METER_REGEN_PER_SEC * delta)), GlobalConfig.MAX_METER)
+		if meter != before:
+			emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
 
 
 # 施加命中定格帧数(取较大值, 避免被更轻的连段打断冻结)

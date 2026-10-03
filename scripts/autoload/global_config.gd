@@ -58,6 +58,11 @@ const ATTACK_LEVEL_STUN_MULT := [1.0, 1.0, 1.25, 1.5, 1.75, 2.0]
 # F 推进技: 角色执行动作时 方向键+F 注入的额外动量
 const F_ADVANCE_SPEED := 420.0     # 推进冲量速度
 const F_ADVANCE_DECAY := 0.85      # 每帧衰减系数
+const F_ADVANCE_METER_COST := 80   # F 推进技消耗的气量(训练无限气时免消耗)
+
+# 能量条(气槽)系统
+const METER_REGEN_PER_SEC := 14.0          # 中立/自由状态每秒自动回气速率
+const METER_GAIN_ON_DAMAGE_RATIO := 0.5    # 受击方按所受伤害比例回气(防守反哺)
 
 # 按攻击等级取硬直倍率
 static func attack_level_stun_mult(level: int) -> float:

@@ -249,11 +249,22 @@ func _update_player_state(player: int, prefix: String, state: Dictionary, histor
 
 
 func _build_input_entry(state: Dictionary) -> Dictionary:
+	var h := 0
+	if state[InputButton.LEFT]["pressed"] and not state[InputButton.RIGHT]["pressed"]:
+		h = -1
+	elif state[InputButton.RIGHT]["pressed"] and not state[InputButton.LEFT]["pressed"]:
+		h = 1
+	var v := 0
+	if state[InputButton.UP]["pressed"] and not state[InputButton.DOWN]["pressed"]:
+		v = -1
+	elif state[InputButton.DOWN]["pressed"] and not state[InputButton.UP]["pressed"]:
+		v = 1
 	return {
 		"left": state[InputButton.LEFT]["pressed"],
 		"right": state[InputButton.RIGHT]["pressed"],
 		"up": state[InputButton.UP]["pressed"],
 		"down": state[InputButton.DOWN]["pressed"],
+		"dir": dir_to_numpad(h, v),
 		"a": state[InputButton.A]["just_pressed"],
 		"b": state[InputButton.B]["just_pressed"],
 		"c": state[InputButton.C]["just_pressed"],
@@ -271,6 +282,57 @@ func get_horizontal(player: int) -> int:
 	if state[InputButton.RIGHT]["pressed"] and not state[InputButton.LEFT]["pressed"]:
 		return 1
 	return 0
+
+
+# ---------- 数字方向(小键盘记法 / Numpad Notation) ----------
+# 将屏幕绝对方向(h, v)映射为小键盘数字 1~9, 5 表示中立(无方向):
+#     7 8 9     上排: 7=上左 8=上 9=上右
+#     4 5 6     中排: 4=左  5=中 6=右
+#     1 2 3     下排: 1=下左 2=下 3=下右
+# 这是格斗游戏通用的"数字方向"记法, 用于指令输入(QCF=236, QCB=214 等)。
+static func dir_to_numpad(h: int, v: int) -> int:
+	if h == 0 and v == 0:
+		return 5
+	if v < 0:    # 上
+		if h < 0:
+			return 7
+		if h > 0:
+			return 9
+		return 8
+	if v > 0:    # 下
+		if h < 0:
+			return 1
+		if h > 0:
+			return 3
+		return 2
+	if h < 0:    # 纯左
+		return 4
+	return 6     # 纯右
+
+
+# 获取玩家当前"屏幕绝对"数字方向(6=屏幕右, 4=屏幕左, 5=中立)
+func get_numpad_direction(player: int) -> int:
+	var state := p1_state if player == 1 else p2_state
+	var h := 0
+	if state[InputButton.LEFT]["pressed"] and not state[InputButton.RIGHT]["pressed"]:
+		h = -1
+	elif state[InputButton.RIGHT]["pressed"] and not state[InputButton.LEFT]["pressed"]:
+		h = 1
+	var v := 0
+	if state[InputButton.UP]["pressed"] and not state[InputButton.DOWN]["pressed"]:
+		v = -1
+	elif state[InputButton.DOWN]["pressed"] and not state[InputButton.UP]["pressed"]:
+		v = 1
+	return dir_to_numpad(h, v)
+
+
+# 取某玩家最近若干帧的"屏幕绝对"数字方向序列(最早 -> 最新), 用于指令识别
+func get_history_dirs(player: int) -> Array:
+	var hist := _p1_history if player == 1 else _p2_history
+	var out: Array = []
+	for e in hist:
+		out.append(int(e.get("dir", 5)))
+	return out
 
 
 # 获取玩家垂直输入方向 (-1上, 0无, 1下)
