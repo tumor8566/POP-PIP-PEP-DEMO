@@ -92,7 +92,6 @@ var light_attacks: Array = []
 var medium_attacks: Array = []
 var heavy_attacks: Array = []
 var special_attacks: Array = []
-var super_attacks: Array = []
 
 # 节点引用
 @onready var sprite: Sprite2D = $Sprite
@@ -182,14 +181,13 @@ func _setup_default_attacks() -> void:
 	heavy_attacks.append(atk_heavy)
 
 	# ============ 必杀技·气拳: 1段，全段防御 + 对胸(气攻) ============
-	#   通常技命中后可取消进必杀技(指令 QCF + A)
+	#   通常技命中后可取消进必杀技(指令 QCF + A); 气拳为当前取消链链尾(不耗气)
 	var atk_special := AttackData.new()
 	atk_special.attack_name = "气拳"
 	atk_special.attack_type = AttackData.AttackType.SPECIAL
 	atk_special.attack_level = 4
 	atk_special.meter_gain = 12
 	atk_special.meter_cost = 0
-	atk_special.cancel_to_super = true    # 气拳可继续取消进必杀技·天崩(链尾)
 	var s_spec := AttackData.Segment.new()
 	s_spec.defense_property = AttackData.DefenseProperty.FULL_BLOCK
 	s_spec.attack_attributes = AttackData.AttackAttribute.CHEST | AttackData.AttackAttribute.QI
@@ -201,27 +199,6 @@ func _setup_default_attacks() -> void:
 	s_spec.active_duration = 4
 	atk_special.segments = [s_spec]
 	special_attacks.append(atk_special)
-
-	# ============ 必杀技: 1段，全段防御 + 对腹(气攻)，需满气 ============
-	#   取消链尾，不可再取消
-	var atk_super := AttackData.new()
-	atk_super.attack_name = "天崩"
-	atk_super.attack_type = AttackData.AttackType.SUPER
-	atk_super.attack_level = 5
-	atk_super.meter_gain = 0
-	atk_super.meter_cost = GlobalConfig.MAX_METER
-	atk_super.cancel_to_super = false
-	var s_sup := AttackData.Segment.new()
-	s_sup.defense_property = AttackData.DefenseProperty.FULL_BLOCK
-	s_sup.attack_attributes = AttackData.AttackAttribute.STOMACH | AttackData.AttackAttribute.QI
-	s_sup.damage = 220
-	s_sup.knockback_x = 360.0
-	s_sup.hitbox_offset = Vector2(110, -40)
-	s_sup.hitbox_size = Vector2(200, 80)
-	s_sup.trigger_frame = 5
-	s_sup.active_duration = 6
-	atk_super.segments = [s_sup]
-	super_attacks.append(atk_super)
 
 	# ============ 投技段(D 键): 需要被拆投(防御属性) + 抓取属性 ============
 	_throw_segment = AttackData.Segment.new()
@@ -265,7 +242,7 @@ func _physics_process(_delta: float) -> void:
 			_process_stand_block()
 		FighterState.State.JUMP_UP, FighterState.State.JUMP_FORWARD, FighterState.State.JUMP_BACK:
 			_process_jump()
-		FighterState.State.ATTACK_LIGHT, FighterState.State.ATTACK_MEDIUM, FighterState.State.ATTACK_HEAVY, FighterState.State.ATTACK_SPECIAL, FighterState.State.ATTACK_SUPER:
+		FighterState.State.ATTACK_LIGHT, FighterState.State.ATTACK_MEDIUM, FighterState.State.ATTACK_HEAVY, FighterState.State.ATTACK_SPECIAL:
 			_process_attack()
 		FighterState.State.HIT_STUN:
 			_process_hit_stun()
@@ -395,7 +372,7 @@ func _is_in_action() -> bool:
 		FighterState.State.JUMP_UP, FighterState.State.JUMP_FORWARD, FighterState.State.JUMP_BACK,
 		FighterState.State.ATTACK_LIGHT, FighterState.State.ATTACK_MEDIUM,
 		FighterState.State.ATTACK_HEAVY, FighterState.State.ATTACK_SPECIAL,
-		FighterState.State.ATTACK_SUPER, FighterState.State.THROW,
+		FighterState.State.THROW,
 	]
 
 
@@ -436,7 +413,6 @@ func _try_f_boost() -> void:
 	if current_state in [
 		FighterState.State.ATTACK_LIGHT, FighterState.State.ATTACK_MEDIUM,
 		FighterState.State.ATTACK_HEAVY, FighterState.State.ATTACK_SPECIAL,
-		FighterState.State.ATTACK_SUPER,
 	]:
 		attack_level = min(attack_level + 1, GlobalConfig.ATTACK_LEVEL_MAX)
 		_flash_level_up()
@@ -620,15 +596,11 @@ func _handle_attack_input() -> void:
 		_attempt_parry()
 		return
 
-	# 必杀技(Special Move): 仅由指令输入(半圈 QCF / 反半圈 QCB)触发, 不提供组合键快捷施放
+	# 必杀技(Special Move): 仅由指令输入(半圈 QCF)触发, 不提供组合键快捷施放
 	#   半圈 QCF(236) + 轻击(A) = 必杀技·气拳(不耗气)
-	#   半圈 QCF(236) + 重击(C) = 必杀技·天崩(需满气)
-	#   指令不成立 / 气量不足时, 退化为对应的通常技(轻 / 重)
+	#   指令不成立时退化为通常技(轻)
 	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) and _history_has_motion(MOTION_QCF):
 		if _try_start_special():
-			return
-	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C) and _history_has_motion(MOTION_QCF):
-		if _try_start_super():
 			return
 
 	# 通常技(Normal): 直接按攻击键(站 / 蹲 / 跳中均为此类)
@@ -646,17 +618,12 @@ func _handle_attack_input() -> void:
 
 
 func _check_cancel_input() -> void:
-	# 取消链: 通常技 -> 必杀技(气拳, QCF+A) -> 必杀技(天崩, QCF+C, 链尾)
-	#   取消时检测指令输入(半圈 QCF) + 对应攻击键, 不依赖组合键(A+B/B+C 已改为投技/格挡技)
+	# 取消链: 通常技(轻/中/重) -> 必杀技·气拳(QCF+A, 链尾)
+	#   取消时检测指令输入(半圈 QCF) + 轻击, 不依赖组合键(A+B/B+C 已改为投技/格挡技)
 	if current_attack and current_attack.cancel_to_special \
 			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) \
 			and _history_has_motion(MOTION_QCF):
 		if _try_start_special():
-			return
-	if current_attack and current_attack.cancel_to_super \
-			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C) \
-			and _history_has_motion(MOTION_QCF):
-		if _try_start_super():
 			return
 
 
@@ -693,7 +660,7 @@ func _end_attack() -> void:
 
 
 func _can_cancel() -> bool:
-	# 通常技与必杀技·气拳可被取消; 必杀技·天崩为链尾, 不再可取消
+	# 通常技与必杀技·气拳可被取消; 必杀技·气拳为当前取消链链尾
 	return current_state in [
 		FighterState.State.ATTACK_LIGHT,
 		FighterState.State.ATTACK_MEDIUM,
@@ -714,25 +681,6 @@ func _try_start_special() -> bool:
 	if special_attacks.is_empty():
 		return false
 	_start_attack(FighterState.State.ATTACK_SPECIAL, special_attacks[0] if special_attacks.size() > 0 else null)
-	return true
-
-
-# 起手/取消 必杀技·天崩: 由指令输入(半圈 QCF + 重击)触发, 需满气(训练模式无限气可免消耗)
-#   指令检测在调用处完成, 此函数只负责气槽判定与起手
-func _try_start_super() -> bool:
-	if super_attacks.is_empty():
-		return false
-	var atk: AttackData = super_attacks[0] if super_attacks.size() > 0 else null
-	if not atk:
-		return false
-	# 训练模式 + 无限气: 免消耗
-	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
-	if not training_infinite and meter < atk.meter_cost:
-		return false
-	if not training_infinite:
-		meter -= atk.meter_cost
-		emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
-	_start_attack(FighterState.State.ATTACK_SUPER, atk)
 	return true
 
 

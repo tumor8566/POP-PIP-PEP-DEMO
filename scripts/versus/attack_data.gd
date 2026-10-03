@@ -10,7 +10,6 @@ enum AttackType {
 	HEAVY,      # 重攻击
 	THROW,      # 投技
 	SPECIAL,    # 必杀技
-	SUPER,      # 超必杀
 }
 
 # 防御属性: 每段攻击在防御侧的表现(单选，仅能同时存在一个)
@@ -40,7 +39,7 @@ enum AttackAttribute {
 @export var attack_name: String = "未命名"
 @export var attack_type: AttackType = AttackType.LIGHT
 # 招式固有攻击等级 (LV1 ~ LV5): 由招式动作本身决定, 不再统一从 LV1 起算
-#   轻攻击=LV1 / 中攻击=LV2 / 重攻击=LV3 / 必杀技(气拳)=LV4 / 必杀技(天崩)=LV5
+#   轻攻击=LV1 / 中攻击=LV2 / 重攻击=LV3 / 必杀技(气拳)=LV4
 #   F 推进技会在该基础等级上再 +1 (上限 LV5)
 @export var attack_level: int = 1
 @export var meter_gain: int = 80
@@ -49,7 +48,6 @@ enum AttackAttribute {
 @export var cancel_to_medium: bool = false
 @export var cancel_to_heavy: bool = false
 @export var cancel_to_special: bool = false
-@export var cancel_to_super: bool = false
 
 # 段列表(按顺序，每段对应一次独立的命中判定窗口)
 var segments: Array = []  # Array[AttackData.Segment]
