@@ -1,28 +1,32 @@
-# pull_loop.ps1 — 近实时从 GitHub 拉取最新代码
-# 用法:
-#   1) 先把本仓库克隆到你的工程目录(或在该目录打开 PowerShell)
-#   2) 右键本文件 -> 用 PowerShell 运行, 或在终端执行:
-#        powershell -ExecutionPolicy Bypass -File pull_loop.ps1
-#   脚本每 3 秒拉取一次; 拉着不放即可在对战里实时看到我推上来的改动。
-#   按 Ctrl+C 退出。
+﻿# pull_loop.ps1 - Auto-pull latest code from GitHub (near real-time)
+# Usage:
+#   1) Clone this repo into your project folder (or open PowerShell in that folder)
+#   2) Run:  powershell -ExecutionPolicy Bypass -File tools\pull_loop.ps1
+#   Pulls every 3 seconds; keep the Godot editor open and it hot-reloads.
+#   Press Ctrl+C to stop.
+#
+# If PowerShell refuses to run this file ("running scripts is disabled"),
+# just use tools\pull_loop.bat instead (double-click, no policy needed).
 
 $ErrorActionPreference = "SilentlyContinue"
 
-Write-Host "=== PPP 工程自动拉取 (每 3 秒) ===" -ForegroundColor Cyan
-Write-Host "在 Godot 编辑器保持打开的状态下, 拉取后外部改动会自动重载。" -ForegroundColor Gray
-Write-Host "按 Ctrl+C 停止。" -ForegroundColor Gray
+# Always operate from the project root, no matter where it is launched from
+Set-Location (Join-Path $PSScriptRoot "..")
+
+Write-Host "=== PPP auto-pull (every 3s) ===" -ForegroundColor Cyan
+Write-Host "Keep the Godot editor open; changes reload automatically after pull." -ForegroundColor Gray
+Write-Host "Press Ctrl+C to stop." -ForegroundColor Gray
 
 while ($true) {
     try {
-        $out = git pull --ff-only 2>&1
-        $line = $out | Out-String
-        if ($line -match "Already up to date") {
-            # 无更新, 静默
-        } else {
-            Write-Host ("[$(Get-Date -Format 'HH:mm:ss')] " + ($line -replace "`n|`r", " ")) -ForegroundColor Green
+        $out = (& git pull --ff-only) 2>&1 | Out-String
+        if ($out -notmatch "Already up to date") {
+            $stamp = Get-Date -Format "HH:mm:ss"
+            Write-Host ("[$stamp] " + ($out -replace "`r|`n", " ")) -ForegroundColor Green
         }
     } catch {
-        Write-Host ("[$(Get-Date -Format 'HH:mm:ss')] pull 失败: " + $_.Exception.Message) -ForegroundColor Red
+        $stamp = Get-Date -Format "HH:mm:ss"
+        Write-Host ("[$stamp] pull failed: " + $_.Exception.Message) -ForegroundColor Red
     }
     Start-Sleep -Seconds 3
 }
