@@ -117,7 +117,7 @@ func _setup_default_attacks() -> void:
 	atk_light.attack_type = AttackData.AttackType.LIGHT
 	atk_light.attack_level = 1
 	atk_light.meter_gain = 60
-	# 取消链: 轻/中/重 通常技可取消进特殊技(不再保留 轻->中->重)
+	# 取消链: 轻/中/重 通常技可取消进必杀技·气拳(不再保留 轻->中->重)
 	atk_light.cancel_to_special = true
 	var s_light := AttackData.Segment.new()
 	s_light.defense_property = AttackData.DefenseProperty.FULL_BLOCK
@@ -177,15 +177,15 @@ func _setup_default_attacks() -> void:
 	atk_heavy.segments = [s_heavy]
 	heavy_attacks.append(atk_heavy)
 
-	# ============ 特殊技: 1段，全段防御 + 对胸(气攻) ============
-	#   通常技命中后可取消进特殊技
+	# ============ 必杀技·气拳: 1段，全段防御 + 对胸(气攻) ============
+	#   通常技命中后可取消进必杀技(指令 QCF + A)
 	var atk_special := AttackData.new()
 	atk_special.attack_name = "气拳"
 	atk_special.attack_type = AttackData.AttackType.SPECIAL
 	atk_special.attack_level = 4
 	atk_special.meter_gain = 120
 	atk_special.meter_cost = 0
-	atk_special.cancel_to_super = true    # 特殊技可继续取消进必杀技
+	atk_special.cancel_to_super = true    # 气拳可继续取消进必杀技·天崩(链尾)
 	var s_spec := AttackData.Segment.new()
 	s_spec.defense_property = AttackData.DefenseProperty.FULL_BLOCK
 	s_spec.attack_attributes = AttackData.AttackAttribute.CHEST | AttackData.AttackAttribute.QI
@@ -607,22 +607,27 @@ func _handle_universal_input() -> void:
 
 
 func _handle_attack_input() -> void:
-	# 必杀技(消耗气): B + C 同时按下, 或 半圈(QCF) + 重击(C)
-	if _combo_pressed(InputHandler.InputButton.B, InputHandler.InputButton.C):
-		_try_start_super()
-		return
-	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C) and _history_has_motion(MOTION_QCF):
-		if _try_start_super(true):
-			return
-		# 气量不足时退化为普通重攻击
-	# 特殊技: A + B 同时按下, 或 半圈(QCF) + 轻击(A)
+	# 投技组合键: A + B (等同于单按 D 投技)
 	if _combo_pressed(InputHandler.InputButton.A, InputHandler.InputButton.B):
-		_try_start_special()
+		_attempt_throw()
 		return
+	# 格挡技组合键: B + C (等同于单按 E 格挡技)
+	if _combo_pressed(InputHandler.InputButton.B, InputHandler.InputButton.C):
+		_attempt_parry()
+		return
+
+	# 必杀技(Special Move): 仅由指令输入(半圈 QCF / 反半圈 QCB)触发, 不提供组合键快捷施放
+	#   半圈 QCF(236) + 轻击(A) = 必杀技·气拳(不耗气)
+	#   半圈 QCF(236) + 重击(C) = 必杀技·天崩(需满气)
+	#   指令不成立 / 气量不足时, 退化为对应的通常技(轻 / 重)
 	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) and _history_has_motion(MOTION_QCF):
-		if _try_start_special(true):
+		if _try_start_special():
 			return
-	# 通常技
+	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C) and _history_has_motion(MOTION_QCF):
+		if _try_start_super():
+			return
+
+	# 通常技(Normal): 直接按攻击键(站 / 蹲 / 跳中均为此类)
 	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A):
 		_start_attack(FighterState.State.ATTACK_LIGHT, light_attacks[0] if light_attacks.size() > 0 else null)
 	elif InputHandler.is_just_pressed(player_id, InputHandler.InputButton.B):
@@ -637,11 +642,18 @@ func _handle_attack_input() -> void:
 
 
 func _check_cancel_input() -> void:
-	# 取消链: 通常技 -> 特殊技 -> 必杀技(链尾, 不可再取消)
-	if current_attack and current_attack.cancel_to_special and _try_start_special():
-		return
-	if current_attack and current_attack.cancel_to_super and _try_start_super():
-		return
+	# 取消链: 通常技 -> 必杀技(气拳, QCF+A) -> 必杀技(天崩, QCF+C, 链尾)
+	#   取消时检测指令输入(半圈 QCF) + 对应攻击键, 不依赖组合键(A+B/B+C 已改为投技/格挡技)
+	if current_attack and current_attack.cancel_to_special \
+			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) \
+			and _history_has_motion(MOTION_QCF):
+		if _try_start_special():
+			return
+	if current_attack and current_attack.cancel_to_super \
+			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C) \
+			and _history_has_motion(MOTION_QCF):
+		if _try_start_super():
+			return
 
 
 # ============ 攻击系统 ============
@@ -677,7 +689,7 @@ func _end_attack() -> void:
 
 
 func _can_cancel() -> bool:
-	# 通常技与特殊技均可被取消; 必杀技为链尾, 不再可取消
+	# 通常技与必杀技·气拳可被取消; 必杀技·天崩为链尾, 不再可取消
 	return current_state in [
 		FighterState.State.ATTACK_LIGHT,
 		FighterState.State.ATTACK_MEDIUM,
@@ -686,29 +698,25 @@ func _can_cancel() -> bool:
 	]
 
 
-# 组合键检测: x 与 y 中有一个刚按下、另一个正按住(用于特殊技/必杀技输入)
+# 组合键检测: x 与 y 中有一个刚按下、另一个正按住(用于投技 A+B / 格挡技 B+C 组合输入)
 func _combo_pressed(x: int, y: int) -> bool:
 	return (InputHandler.is_just_pressed(player_id, x) and InputHandler.is_pressed(player_id, y)) \
 		or (InputHandler.is_just_pressed(player_id, y) and InputHandler.is_pressed(player_id, x))
 
 
-# 尝试以 特殊技(A+B 或 半圈+轻击) 起手/取消(不消耗气)
-#   force=true 时跳过 A+B 组合键检测(用于半圈指令触发)
-func _try_start_special(force := false) -> bool:
+# 起手/取消 必杀技·气拳: 由指令输入(半圈 QCF + 轻击)触发, 不消耗气
+#   指令检测在调用处完成, 此函数只负责起手与防止空数组
+func _try_start_special() -> bool:
 	if special_attacks.is_empty():
-		return false
-	if not force and not _combo_pressed(InputHandler.InputButton.A, InputHandler.InputButton.B):
 		return false
 	_start_attack(FighterState.State.ATTACK_SPECIAL, special_attacks[0] if special_attacks.size() > 0 else null)
 	return true
 
 
-# 尝试以 必杀技(B+C 或 半圈+重击) 起手/取消(消耗气, 训练模式无限气可免消耗)
-#   force=true 时跳过 B+C 组合键检测(用于半圈指令触发)
-func _try_start_super(force := false) -> bool:
+# 起手/取消 必杀技·天崩: 由指令输入(半圈 QCF + 重击)触发, 需满气(训练模式无限气可免消耗)
+#   指令检测在调用处完成, 此函数只负责气槽判定与起手
+func _try_start_super() -> bool:
 	if super_attacks.is_empty():
-		return false
-	if not force and not _combo_pressed(InputHandler.InputButton.B, InputHandler.InputButton.C):
 		return false
 	var atk: AttackData = super_attacks[0] if super_attacks.size() > 0 else null
 	if not atk:

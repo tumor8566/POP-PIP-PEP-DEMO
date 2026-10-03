@@ -227,7 +227,7 @@ func _hitstop_frames_for(seg: AttackData.Segment, blocked: bool) -> int:
 	if dmg >= 200:
 		return 12   # 必杀技
 	if dmg >= 100:
-		return 9    # 重击 / 特殊技
+		return 9    # 重击 / 必杀技(气拳)
 	if dmg >= 80:
 		return 7    # 中击二段
 	return 5        # 轻击

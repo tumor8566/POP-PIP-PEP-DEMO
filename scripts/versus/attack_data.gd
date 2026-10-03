@@ -40,7 +40,7 @@ enum AttackAttribute {
 @export var attack_name: String = "未命名"
 @export var attack_type: AttackType = AttackType.LIGHT
 # 招式固有攻击等级 (LV1 ~ LV5): 由招式动作本身决定, 不再统一从 LV1 起算
-#   轻攻击=LV1 / 中攻击=LV2 / 重攻击=LV3 / 特殊技=LV4 / 必杀技=LV5
+#   轻攻击=LV1 / 中攻击=LV2 / 重攻击=LV3 / 必杀技(气拳)=LV4 / 必杀技(天崩)=LV5
 #   F 推进技会在该基础等级上再 +1 (上限 LV5)
 @export var attack_level: int = 1
 @export var meter_gain: int = 80

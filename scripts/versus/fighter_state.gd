@@ -18,8 +18,8 @@ enum State {
 	ATTACK_LIGHT,   # 轻攻击(通常技)
 	ATTACK_MEDIUM,  # 中攻击(通常技)
 	ATTACK_HEAVY,   # 重攻击(通常技)
-	ATTACK_SPECIAL, # 特殊技
-	ATTACK_SUPER,   # 必杀技
+	ATTACK_SPECIAL, # 必杀技(气拳)
+	ATTACK_SUPER,   # 必杀技(天崩)
 	THROW,          # 投技
 	HIT_STUN,       # 受击硬直
 	GRABBED,        # 被抓取(可拆投)
@@ -46,7 +46,7 @@ const GROUND_STATES := [
 ]
 
 # 状态是否可取消(用于连招系统)
-# 取消链: 通常技(轻/中/重) -> 特殊技 -> 必杀技(链尾, 不可再取消)
+# 取消链: 通常技(轻/中/重) -> 必杀技(气拳) -> 必杀技(天崩, 链尾)
 const CANCELLABLE_STATES := [
 	State.ATTACK_LIGHT, State.ATTACK_MEDIUM, State.ATTACK_HEAVY, State.ATTACK_SPECIAL,
 ]
