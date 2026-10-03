@@ -19,11 +19,15 @@ var health := GlobalConfig.MAX_HEALTH:
 	set(value):
 		health = clampi(value, 0, GlobalConfig.MAX_HEALTH)
 
-var meter := 0:
+var meter := GlobalConfig.MAX_METER:
 	set(value):
 		meter = clampi(value, 0, GlobalConfig.MAX_METER)
 
 var rounds_won := 0
+
+# 投技成立距离: 角色级框架值, 默认取全局 THROW_RANGE(贴身范围)
+#   后续设计具体角色/招式时可覆盖(如某些角色投技更远或更近, 特定招式单独指定)
+var throw_range := GlobalConfig.THROW_RANGE
 
 # 状态
 var current_state := FighterState.State.INTRO
@@ -116,7 +120,7 @@ func _setup_default_attacks() -> void:
 	atk_light.attack_name = "轻拳"
 	atk_light.attack_type = AttackData.AttackType.LIGHT
 	atk_light.attack_level = 1
-	atk_light.meter_gain = 60
+	atk_light.meter_gain = 6
 	# 取消链: 轻/中/重 通常技可取消进必杀技·气拳(不再保留 轻->中->重)
 	atk_light.cancel_to_special = true
 	var s_light := AttackData.Segment.new()
@@ -136,7 +140,7 @@ func _setup_default_attacks() -> void:
 	atk_medium.attack_name = "中拳·二段"
 	atk_medium.attack_type = AttackData.AttackType.MEDIUM
 	atk_medium.attack_level = 2
-	atk_medium.meter_gain = 80
+	atk_medium.meter_gain = 8
 	atk_medium.cancel_to_special = true
 	var m_seg1 := AttackData.Segment.new()
 	m_seg1.defense_property = AttackData.DefenseProperty.FULL_BLOCK
@@ -163,7 +167,7 @@ func _setup_default_attacks() -> void:
 	atk_heavy.attack_name = "重拳"
 	atk_heavy.attack_type = AttackData.AttackType.HEAVY
 	atk_heavy.attack_level = 3
-	atk_heavy.meter_gain = 100
+	atk_heavy.meter_gain = 10
 	atk_heavy.cancel_to_special = true
 	var s_heavy := AttackData.Segment.new()
 	s_heavy.defense_property = AttackData.DefenseProperty.CROUCH_BREAK
@@ -183,7 +187,7 @@ func _setup_default_attacks() -> void:
 	atk_special.attack_name = "气拳"
 	atk_special.attack_type = AttackData.AttackType.SPECIAL
 	atk_special.attack_level = 4
-	atk_special.meter_gain = 120
+	atk_special.meter_gain = 12
 	atk_special.meter_cost = 0
 	atk_special.cancel_to_super = true    # 气拳可继续取消进必杀技·天崩(链尾)
 	var s_spec := AttackData.Segment.new()
@@ -739,7 +743,8 @@ func _attempt_throw() -> void:
 		return
 	var dist := global_position.distance_to(opponent.global_position)
 	# 投技以段(_throw_segment)承载防御属性(需要被拆投)与攻击属性(抓取)
-	if dist < GlobalConfig.THROW_RANGE and opponent._begin_grabbed(self, _throw_segment):
+	#   成立距离取角色级 throw_range(默认全局贴身框架值, 可按角色/招式覆盖)
+	if dist < throw_range and opponent._begin_grabbed(self, _throw_segment):
 		_change_state(FighterState.State.THROW)
 
 
@@ -944,12 +949,14 @@ func _gain_meter(amount: int) -> void:
 	emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
 
 
-# 气槽被动回充: 仅在"自由/中立"状态且非训练无限气时缓慢回气
+# 气槽被动回充: 仅在"自由/中立"状态且非训练无限气时回气
+#   按逻辑帧(60 FPS)计量: 每帧恢复 METER_REGEN_PER_FRAME P(不满时)
 func _tick_meter(delta: float) -> void:
 	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
 	if current_state in METER_REGEN_STATES and not training_infinite:
+		var gain := int(round(GlobalConfig.METER_REGEN_PER_FRAME * delta * 60.0))
 		var before := meter
-		meter = min(meter + int(round(GlobalConfig.METER_REGEN_PER_SEC * delta)), GlobalConfig.MAX_METER)
+		meter = min(meter + gain, GlobalConfig.MAX_METER)
 		if meter != before:
 			emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
 

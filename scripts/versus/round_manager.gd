@@ -55,10 +55,10 @@ func _start_round() -> void:
 	timer_running = false
 	pause_between_rounds = false
 
-	# 重置角色状态
+	# 重置角色状态: 每局游戏开始, 血量与气槽均默认满值(100 H / 100 P)
 	if p1:
 		p1.health = GlobalConfig.MAX_HEALTH
-		p1.meter = GlobalConfig.MAX_METER if _is_training() else 0
+		p1.meter = GlobalConfig.MAX_METER
 	if p2:
 		p2.health = GlobalConfig.MAX_HEALTH
 		p2.meter = GlobalConfig.MAX_METER

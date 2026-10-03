@@ -12,8 +12,8 @@ const GAME_HEIGHT := 720
 # 格斗参数
 const ROUND_TIME := 99           # 每回合时间(秒)
 const MAX_ROUNDS := 3            # 最大回合数(三局两胜)
-const MAX_HEALTH := 1000         # 最大血量
-const MAX_METER := 1000          # 最大气槽
+const MAX_HEALTH := 100          # 最大血量 (100 H)
+const MAX_METER := 100           # 最大气槽 (100 P)
 
 # 角色通用属性
 const WALK_SPEED := 400.0
@@ -46,7 +46,7 @@ const LIGHT_DAMAGE := 50
 const MEDIUM_DAMAGE := 80
 const HEAVY_DAMAGE := 120
 const THROW_DAMAGE := 140
-const THROW_RANGE := 55.0        # 投技成立距离
+const THROW_RANGE := 55.0        # 投技成立距离(贴身框架默认值; 具体角色/招式可覆盖 Fighter.throw_range)
 const GRAB_TECH_WINDOW := 12     # 拆投窗口(帧)，被抓取后在此期间按投技键可化解
 
 # 攻击等级 (F 推进技): LV1 ~ LV5
@@ -58,11 +58,12 @@ const ATTACK_LEVEL_STUN_MULT := [1.0, 1.0, 1.25, 1.5, 1.75, 2.0]
 # F 推进技: 角色执行动作时 方向键+F 注入的额外动量
 const F_ADVANCE_SPEED := 420.0     # 推进冲量速度
 const F_ADVANCE_DECAY := 0.85      # 每帧衰减系数
-const F_ADVANCE_METER_COST := 80   # F 推进技消耗的气量(训练无限气时免消耗)
+const F_ADVANCE_METER_COST := 25   # F 推进技消耗的气量(训练无限气时免消耗)
 
-# 能量条(气槽)系统
-const METER_REGEN_PER_SEC := 14.0          # 中立/自由状态每秒自动回气速率
-const METER_GAIN_ON_DAMAGE_RATIO := 0.5    # 受击方按所受伤害比例回气(防守反哺)
+# 能量条(气槽)系统 (满值 100 P, 每局开始默认 100 P)
+#   逻辑帧为 1 秒 60 帧, 故"每帧"即按 60 FPS 计量
+const METER_REGEN_PER_FRAME := 6            # 中立/自由状态每逻辑帧自动回气(不满时)
+const METER_GAIN_ON_DAMAGE_RATIO := 0.5     # 受击方按所受伤害比例回气(防守反哺)
 
 # 按攻击等级取硬直倍率
 static func attack_level_stun_mult(level: int) -> float:
