@@ -170,13 +170,14 @@ func _clamp_axis(v: float, view_size: float, stage_size: float) -> float:
 
 
 # 命中结算回调: 统一驱动 命中定格 / 火花 / 震动 / 闪光 / 连击 / 音效
-func _on_fighter_hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.Segment, blocked: bool) -> void:
-	_apply_hitstop(_hitstop_frames_for(seg, blocked))
+#   spot 为判定区: NONE 普通 / SWEET 甜点(强化演出) / SOUR 酸点(削弱演出)
+func _on_fighter_hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.Segment, blocked: bool, spot: int = Hitbox.Spot.NONE) -> void:
+	_apply_hitstop(_hitstop_frames_for(seg, blocked, spot))
 
 	var spark_pos := target.global_position + Vector2(0, -40)
-	_spawn_hit_spark(spark_pos, _hit_spark_color(seg, blocked), blocked)
+	_spawn_hit_spark(spark_pos, _hit_spark_color(seg, blocked, spot), blocked)
 
-	_shake_camera(_shake_strength_for(seg, blocked))
+	_shake_camera(_shake_strength_for(seg, blocked, spot))
 
 	_flash_target(target, blocked)
 
@@ -187,6 +188,28 @@ func _on_fighter_hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.
 		if is_instance_valid(attacker):
 			hud.update_combo(attacker.combo_count)
 		AudioManager.play_hit(_hit_power(seg), false)
+		# 甜点: 额外演出(角色闪白 + 提示文本)
+		if spot == Hitbox.Spot.SWEET:
+			_spawn_spot_banner(spark_pos, "SWEET 甜点", Color(1.0, 0.85, 0.2))
+		elif spot == Hitbox.Spot.SOUR:
+			_spawn_spot_banner(spark_pos, "SOUR 酸点", Color(0.6, 0.6, 0.7))
+
+
+# 甜点/酸点的额外演出: 在命中处显示提示文本
+func _spawn_spot_banner(pos: Vector2, text: String, color: Color) -> void:
+	var label := Label.new()
+	label.text = text
+	label.global_position = pos + Vector2(-60, -70)
+	label.size = Vector2(120, 24)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_font_size_override("font_size", 18)
+	label.z_index = 100
+	add_child(label)
+	var tw := create_tween()
+	tw.tween_property(label, "position:y", label.position.y - 30.0, 0.5)
+	tw.parallel().tween_property(label, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(label.queue_free)
 
 
 # 双方同时施加命中定格(攻击方也被冻住, 强化冲击定格感)
@@ -218,24 +241,36 @@ func _flash_target(target: Fighter, blocked: bool) -> void:
 	tween.tween_property(spr, "modulate", Color(1, 1, 1), 0.12)
 
 
-func _hitstop_frames_for(seg: AttackData.Segment, blocked: bool) -> int:
+func _hitstop_frames_for(seg: AttackData.Segment, blocked: bool, spot: int = Hitbox.Spot.NONE) -> int:
 	if blocked:
 		return 3
-	if not seg:
-		return 4
-	var dmg: int = seg.damage
-	if dmg >= 200:
-		return 12   # 必杀技
-	if dmg >= 100:
-		return 9    # 重击 / 必杀技(气拳)
-	if dmg >= 80:
-		return 7    # 中击二段
-	return 5        # 轻击
+	var base: int = 4
+	if seg:
+		var dmg: int = seg.damage
+		if dmg >= 200:
+			base = 12   # 必杀技
+		elif dmg >= 100:
+			base = 9    # 重击 / 必杀技(气拳)
+		elif dmg >= 80:
+			base = 7    # 中击二段
+		else:
+			base = 5        # 轻击
+	# 甜点: 停帧更长(打击感更强); 酸点: 停帧更短
+	if spot == Hitbox.Spot.SWEET:
+		base += 4
+	elif spot == Hitbox.Spot.SOUR:
+		base = maxi(1, base - 2)
+	return base
 
 
-func _hit_spark_color(seg: AttackData.Segment, blocked: bool) -> Color:
+func _hit_spark_color(seg: AttackData.Segment, blocked: bool, spot: int = Hitbox.Spot.NONE) -> Color:
 	if blocked:
 		return Color(0.4, 0.7, 1.0)        # 蓝色格挡火花
+	# 甜点: 金色火花; 酸点: 暗灰火花
+	if spot == Hitbox.Spot.SWEET:
+		return Color(1.0, 0.95, 0.4)
+	if spot == Hitbox.Spot.SOUR:
+		return Color(0.55, 0.55, 0.6)
 	if not seg:
 		return Color(1, 1, 1)
 	var dmg: int = seg.damage
@@ -246,17 +281,24 @@ func _hit_spark_color(seg: AttackData.Segment, blocked: bool) -> Color:
 	return Color(1.0, 1.0, 0.9)           # 白 轻击
 
 
-func _shake_strength_for(seg: AttackData.Segment, blocked: bool) -> float:
+func _shake_strength_for(seg: AttackData.Segment, blocked: bool, spot: int = Hitbox.Spot.NONE) -> float:
 	if blocked:
 		return 4.0
-	if not seg:
-		return 6.0
-	var dmg: int = seg.damage
-	if dmg >= 200:
-		return 22.0
-	if dmg >= 100:
-		return 16.0
-	return 10.0
+	var base: float = 6.0
+	if seg:
+		var dmg: int = seg.damage
+		if dmg >= 200:
+			base = 22.0
+		elif dmg >= 100:
+			base = 16.0
+		else:
+			base = 10.0
+	# 甜点: 额外震屏; 酸点: 震屏打折
+	if spot == Hitbox.Spot.SWEET:
+		base += GlobalConfig.SWEET_SHAKE_BONUS
+	elif spot == Hitbox.Spot.SOUR:
+		base *= GlobalConfig.SOUR_SHAKE_MULT
+	return base
 
 
 func _hit_power(seg: AttackData.Segment) -> float:

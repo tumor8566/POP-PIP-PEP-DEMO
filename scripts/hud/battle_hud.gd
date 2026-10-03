@@ -8,6 +8,8 @@ var p2: Fighter
 
 @onready var p1_health_bar: ProgressBar = $HUDContainer/P1Side/HealthBar
 @onready var p2_health_bar: ProgressBar = $HUDContainer/P2Side/HealthBar
+@onready var p1_gray_bar: ProgressBar = $HUDContainer/P1Side/HealthBar/GrayLifeBar
+@onready var p2_gray_bar: ProgressBar = $HUDContainer/P2Side/HealthBar/GrayLifeBar
 @onready var p1_meter_bar: ProgressBar = $HUDContainer/P1Side/MeterBar
 @onready var p2_meter_bar: ProgressBar = $HUDContainer/P2Side/MeterBar
 @onready var p1_name_label: Label = $HUDContainer/P1Side/NameLabel
@@ -48,9 +50,13 @@ func _connect_signals() -> void:
 	if p1:
 		p1.health_changed.connect(_on_p1_health_changed)
 		p1.meter_changed.connect(_on_p1_meter_changed)
+		if p1.has_signal("gray_life_changed"):
+			p1.gray_life_changed.connect(_on_p1_gray_changed)
 	if p2:
 		p2.health_changed.connect(_on_p2_health_changed)
 		p2.meter_changed.connect(_on_p2_meter_changed)
+		if p2.has_signal("gray_life_changed"):
+			p2.gray_life_changed.connect(_on_p2_gray_changed)
 
 
 func _setup_names() -> void:
@@ -109,16 +115,22 @@ func _setup_training_panel() -> void:
 	vbox.add_child(hints)
 
 	var hint2 := Label.new()
-	hint2.text = "指令必杀技: 半圈↓→(236)+轻击=必杀技·气拳(不耗气) · F=推进(耗气)"
+	hint2.text = "指令必杀技: 半圈↓→(236)+轻击=必杀技·气拳(不耗气) · F=推进(30P)/脱离(50P)"
 	hint2.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8, 1))
 	hint2.add_theme_font_size_override("font_size", 13)
 	vbox.add_child(hint2)
 
 	var hint3 := Label.new()
-	hint3.text = "组合键: A+B=投技(同D) · B+C=格挡技(同E) · 通常技=直接按A/B/C"
-	hint2.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8, 1))
-	hint2.add_theme_font_size_override("font_size", 13)
-	vbox.add_child(hint2)
+	hint3.text = "组合键: A+B=抓取(同D) · B+C=格挡技(同E) · 通常技=直接按A/B/C"
+	hint3.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8, 1))
+	hint3.add_theme_font_size_override("font_size", 13)
+	vbox.add_child(hint3)
+
+	var hint4 := Label.new()
+	hint4.text = "系统: 虚血(灰段3S后恢复) · 甜点/酸点(判定框内区域) · 追地(打倒地) · 相杀(判定相撞)"
+	hint4.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0, 1))
+	hint4.add_theme_font_size_override("font_size", 13)
+	vbox.add_child(hint4)
 
 
 func _update_training_panel() -> void:
@@ -180,6 +192,19 @@ func _update_health_color(bar: ProgressBar, ratio: float) -> void:
 		bar.tint_progress = Color(1, 1, 0, 1)      # 黄色
 	else:
 		bar.tint_progress = Color(1, 0, 0, 1)      # 红色
+
+
+# 虚血 (RECOVERABLE LIFE): 灰血以灰色段显示在血条上(血量 + 灰血 = 总受损量)
+func _on_p1_gray_changed(current_gray: int, max_gray: int) -> void:
+	if p1_gray_bar:
+		p1_gray_bar.max_value = max_gray
+		p1_gray_bar.value = current_gray
+
+
+func _on_p2_gray_changed(current_gray: int, max_gray: int) -> void:
+	if p2_gray_bar:
+		p2_gray_bar.max_value = max_gray
+		p2_gray_bar.value = current_gray
 
 
 func update_combo(count: int) -> void:

@@ -51,13 +51,14 @@ FightingGame/
 
 ### 1. 状态机 (FighterState)
 
-角色共有 **18种状态**，按类别分为:
+角色共有 **22种状态**，按类别分为:
 
 - **移动类**: IDLE / WALK_FORWARD / WALK_BACK / DASH_FORWARD / DASH_BACK / CROUCH
 - **跳跃类**: JUMP_UP / JUMP_FORWARD / JUMP_BACK
 - **防御类**: STAND_BLOCK / CROUCH_BLOCK
-- **攻击类**: ATTACK_LIGHT / ATTACK_MEDIUM / ATTACK_HEAVY / THROW
-- **受击类**: HIT_STUN / KNOCKDOWN / WAKEUP
+- **攻击类**: ATTACK_LIGHT / ATTACK_MEDIUM / ATTACK_HEAVY / ATTACK_SPECIAL / GRAB
+- **受击类**: HIT_STUN / GRABBED / KNOCKDOWN / SOFT_KNOCKDOWN / WAKEUP
+- **系统类**: ESCAPE (脱离) / CRASHED (相杀)
 - **演出类**: INTRO / VICTORY / DEFEATED
 
 ### 2. 攻击系统 (AttackData)
@@ -88,7 +89,7 @@ FightingGame/
 | 轻攻击A | J       | Numpad 1     |
 | 中攻击B | K       | Numpad 2     |
 | 重攻击C | L       | Numpad 3     |
-| 投技D  | U       | Numpad 4     |
+| 抓取 D  | U       | Numpad 4     |
 | 格挡E  | I       | Numpad 5     |
 | 开始   | Enter   | Numpad Enter |
 

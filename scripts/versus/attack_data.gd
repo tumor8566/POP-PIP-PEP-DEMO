@@ -8,7 +8,7 @@ enum AttackType {
 	LIGHT,      # 轻攻击
 	MEDIUM,     # 中攻击
 	HEAVY,      # 重攻击
-	THROW,      # 投技
+	GRAB,       # 抓取
 	SPECIAL,    # 必杀技
 }
 
@@ -18,7 +18,7 @@ enum DefenseProperty {
 	STANCE_BREAK,          # 站姿破坏 (下段)   — 仅蹲防可防，站防无效
 	CROUCH_BREAK,          # 蹲姿破坏 (中段·越头) — 仅站防可防，蹲防无效
 	UNBLOCKABLE,           # 不可防御          — 任何防御均无效
-	THROW_BREAK_REQUIRED,  # 需要被拆投        — 不可防御，需在窗口内按下投技键化解
+	GRAB_BREAK_REQUIRED,   # 需要被拆投        — 不可防御，需在窗口内按下抓取键(D)化解
 }
 
 # 攻击属性: 每段攻击命中后的效果标签(位标志，可叠加)
@@ -90,9 +90,28 @@ class Segment extends RefCounted:
 	var hitbox_offset: Vector2 = Vector2(40, 0)
 	var hitbox_size: Vector2 = Vector2(60, 40)
 
+	# 甜点 (SWEET) / 酸点 (SOUR): 判定框内部的相对区域(Rect2, 0~1 归一化坐标)
+	#   为 size == Vector2.ZERO 时表示该招式没有此判定区
+	#   例如 Rect2(0.7, 0.0, 0.3, 1.0) 表示判定框最靠近对手的右侧 30% 纵向全高区域
+	var sweet_spot := Rect2()
+	var sour_spot := Rect2()
+
+	# 追地 (PURSUIT): 仅对倒地/起身中的对手成立的追地攻击
+	#   命中后强制对手进入软倒地, 且不产生虚血
+	var is_pursuit := false
+
 	var trigger_frame: int = 0
 	var active_duration: int = 4
 
 
 	func has_attribute(attr: int) -> bool:
 		return (attack_attributes & attr) != 0
+
+
+	# 判断命中点(相对判定框 0~1 归一化坐标)是否落在甜点/酸点区域
+	func is_sweet_point(rel: Vector2) -> bool:
+		return sweet_spot.size != Vector2.ZERO and sweet_spot.has_point(rel)
+
+
+	func is_sour_point(rel: Vector2) -> bool:
+		return sour_spot.size != Vector2.ZERO and sour_spot.has_point(rel)

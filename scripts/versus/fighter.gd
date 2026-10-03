@@ -4,11 +4,12 @@ class_name Fighter
 extends CharacterBody2D
 
 signal health_changed(current_health, max_health)
+signal gray_life_changed(current_gray, max_gray)
 signal meter_changed(current_meter, max_meter)
 signal state_changed(new_state)
 signal round_lost(fighter)
-# 命中结算反馈: target=受击方, attacker=攻击方, seg=命中的段, blocked=是否被防御
-signal hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.Segment, blocked: bool)
+# 命中结算反馈: target=受击方, attacker=攻击方, seg=命中的段, blocked=是否被防御, spot=判定区(NONE/SWEET/SOUR)
+signal hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.Segment, blocked: bool, spot: int)
 
 # 玩家编号
 @export var player_id: int = 1
@@ -25,9 +26,12 @@ var meter := GlobalConfig.MAX_METER:
 
 var rounds_won := 0
 
-# 投技成立距离: 角色级框架值, 默认取全局 THROW_RANGE(贴身范围)
-#   后续设计具体角色/招式时可覆盖(如某些角色投技更远或更近, 特定招式单独指定)
-var throw_range := GlobalConfig.THROW_RANGE
+# 抓取成立距离: 角色级框架值, 默认取全局 GRAB_RANGE(贴身范围)
+#   后续设计具体角色/招式时可覆盖(如某些角色抓取更远或更近, 特定招式单独指定)
+var grab_range := GlobalConfig.GRAB_RANGE
+
+# 回气锁定帧: 推进(120f)/脱离(300f)用后一段时间内无法自动回气
+var meter_regen_lockout := 0
 
 # 状态
 var current_state := FighterState.State.INTRO
@@ -77,15 +81,27 @@ var buffer_timer := 0
 # 对手引用
 var opponent: Fighter = null
 
-# 被抓取 / 拆投
+# 被抓取 / 拆投(GRAB BREAK)
 var is_being_grabbed := false
-var _grab_tech_window := 0
+var _grab_break_window := 0
 var _grab_attacker: Fighter = null
-var _grab_segment: AttackData.Segment = null  # 抓取命中段的伤害/击退数据(投技成立时结算)
-var _throw_segment: AttackData.Segment = null  # D 键投技使用的段数据(在 _setup_default_attacks 构建)
+var _grab_segment: AttackData.Segment = null  # 抓取命中段的伤害/击退数据(抓取成立时结算)
+var _grab_move_segment: AttackData.Segment = null  # D 键抓取动作使用的段数据(在 _setup_default_attacks 构建)
 var _hit_stun_remaining := 0    # 本次受击的有效硬直帧(已按攻击方等级缩放)
-var block_stun_timer := 0       # 防御硬直锁定帧(防御中受击后短暂无法脱离防御)
+var block_stun_timer := 0       # 防御硬直锁定帧(防御中受击后短暂无法脱离防御, 同时是"脱离"的触发窗口)
 var _active_seg_index := -1  # 当前攻击正在激活的段索引(用于在切换段时重新配置 hitbox)
+
+# ===== 虚血 (RECOVERABLE LIFE) =====
+#   受击时按伤害的 GRAY_LIFE_RATIO 转化为灰色血量(血条灰段), 长时间未受击后逐步恢复
+var gray_life := 0# 当前灰色血量(不参与 KO 判定)
+var _gray_life_timer := 0      # 未受击计时(帧), 达到阈值后开始恢复
+
+# ===== 追地 (PURSUIT) =====
+#   对倒地/起身中的对手成立的追地攻击(命中后强制对手软倒地, 且不产生虚血)
+var _pursuit_active := false   # 本次攻击是否为追地攻击
+
+# ===== 相杀 (CRASH) =====
+var _crash_timer := 0          # 相杀硬直剩余帧
 
 # 攻击数据(子类或资源可覆盖)
 var light_attacks: Array = []
@@ -130,6 +146,8 @@ func _setup_default_attacks() -> void:
 	s_light.hitbox_size = Vector2(120, 60)
 	s_light.trigger_frame = 4
 	s_light.active_duration = 3
+	# 甜点 (SWEET): 判定框最靠近对手的右侧 30%(命中此处伤害提高并有额外演出)
+	s_light.sweet_spot = Rect2(0.7, 0.0, 0.3, 1.0)
 	atk_light.segments = [s_light]
 	light_attacks.append(atk_light)
 
@@ -158,12 +176,15 @@ func _setup_default_attacks() -> void:
 	m_seg2.hitbox_size = Vector2(150, 50)
 	m_seg2.trigger_frame = 14
 	m_seg2.active_duration = 4
+	# 酸点 (SOUR): 判定框最远离对手的左侧 30%(命中此处伤害降低、演出削弱)
+	m_seg2.sour_spot = Rect2(0.0, 0.0, 0.3, 1.0)
 	atk_medium.segments = [m_seg1, m_seg2]
 	medium_attacks.append(atk_medium)
 
 	# ============ 重攻击: 1段，蹲姿破坏 + 对腹 ============
+	#   兼具追地(PURSUIT)性质: 对倒地/起身中的对手成立, 命中强制软倒地
 	var atk_heavy := AttackData.new()
-	atk_heavy.attack_name = "重拳"
+	atk_heavy.attack_name = "重拳·追地"
 	atk_heavy.attack_type = AttackData.AttackType.HEAVY
 	atk_heavy.attack_level = 3
 	atk_heavy.meter_gain = 10
@@ -177,6 +198,10 @@ func _setup_default_attacks() -> void:
 	s_heavy.hitbox_size = Vector2(160, 60)
 	s_heavy.trigger_frame = 10
 	s_heavy.active_duration = 5
+	# 追地: 仅对倒地类状态成立; 命中后强制对手软倒地, 且不产生虚血
+	s_heavy.is_pursuit = true
+	# 甜点: 判定框靠对手侧 25%
+	s_heavy.sweet_spot = Rect2(0.75, 0.0, 0.25, 1.0)
 	atk_heavy.segments = [s_heavy]
 	heavy_attacks.append(atk_heavy)
 
@@ -200,17 +225,17 @@ func _setup_default_attacks() -> void:
 	atk_special.segments = [s_spec]
 	special_attacks.append(atk_special)
 
-	# ============ 投技段(D 键): 需要被拆投(防御属性) + 抓取属性 ============
-	_throw_segment = AttackData.Segment.new()
-	_throw_segment.defense_property = AttackData.DefenseProperty.THROW_BREAK_REQUIRED
-	_throw_segment.attack_attributes = AttackData.AttackAttribute.GRAB
-	_throw_segment.damage = GlobalConfig.THROW_DAMAGE
-	_throw_segment.knockback_x = 150.0
-	_throw_segment.hit_stun = 20
-	_throw_segment.hitbox_offset = Vector2(40, -30)
-	_throw_segment.hitbox_size = Vector2(70, 50)
-	_throw_segment.trigger_frame = 0
-	_throw_segment.active_duration = 3
+	# ============ 抓取段(D 键): 需要被拆投(防御属性) + 抓取属性 ============
+	_grab_move_segment = AttackData.Segment.new()
+	_grab_move_segment.defense_property = AttackData.DefenseProperty.GRAB_BREAK_REQUIRED
+	_grab_move_segment.attack_attributes = AttackData.AttackAttribute.GRAB
+	_grab_move_segment.damage = GlobalConfig.GRAB_DAMAGE
+	_grab_move_segment.knockback_x = 150.0
+	_grab_move_segment.hit_stun = 20
+	_grab_move_segment.hitbox_offset = Vector2(40, -30)
+	_grab_move_segment.hitbox_size = Vector2(70, 50)
+	_grab_move_segment.trigger_frame = 0
+	_grab_move_segment.active_duration = 3
 
 
 func _physics_process(_delta: float) -> void:
@@ -221,11 +246,14 @@ func _physics_process(_delta: float) -> void:
 
 	state_time += 1
 	
-	# F 推进技: 仅在"执行动作"时, 方向键+F 注入额外动量(并提升攻击等级)
+	# 方向+F: 动作中=推进(POP IMPETUS), 防御硬直中=脱离(ESCAPE)
 	_try_f_boost()
 	
 	# 能量条: 中立/自由状态缓慢自动回气(攻击/受击/倒地时不回)
 	_tick_meter(_delta)
+	
+	# 虚血: 长时间未受击后逐步恢复为实际血量
+	_tick_gray_life()
 	
 	match current_state:
 		FighterState.State.INTRO:
@@ -248,8 +276,14 @@ func _physics_process(_delta: float) -> void:
 			_process_hit_stun()
 		FighterState.State.GRABBED:
 			_process_grabbed()
+		FighterState.State.ESCAPE:
+			_process_escape()
 		FighterState.State.KNOCKDOWN:
 			_process_knockdown()
+		FighterState.State.SOFT_KNOCKDOWN:
+			_process_soft_knockdown()
+		FighterState.State.CRASHED:
+			_process_crashed()
 		FighterState.State.WAKEUP:
 			_process_wakeup()
 		FighterState.State.VICTORY, FighterState.State.DEFEATED:
@@ -363,8 +397,9 @@ func _process_jump() -> void:
 
 # ============ F 推进技 ============
 
-# 是否处于"执行动作"状态(F 推进技仅在此类状态生效)
+# 是否处于"执行动作"状态(推进 / POP IMPETUS 仅在此类状态生效)
 #   IDLE / 受击 / 倒地 / 被抓 / 起身 / 胜负 / 入场 等非可控状态按 F 无影响
+#   注: 防御硬直中另走"脱离(ESCAPE)"分支, 不在此列
 func _is_in_action() -> bool:
 	return current_state in [
 		FighterState.State.WALK_FORWARD, FighterState.State.WALK_BACK,
@@ -372,50 +407,100 @@ func _is_in_action() -> bool:
 		FighterState.State.JUMP_UP, FighterState.State.JUMP_FORWARD, FighterState.State.JUMP_BACK,
 		FighterState.State.ATTACK_LIGHT, FighterState.State.ATTACK_MEDIUM,
 		FighterState.State.ATTACK_HEAVY, FighterState.State.ATTACK_SPECIAL,
-		FighterState.State.THROW,
+		FighterState.State.GRAB,
 	]
 
 
-# F 推进技核心:
-#   角色正在执行动作(移动/攻击/跳跃/投技)时, 按下 方向键 + F:
-#     - 向指定方向注入额外动量(advance_velocity), 让角色突进/斜冲
-#     - 消耗一定气量; 气量不足时本次推进无效
-#     - 若正处于攻击状态, 攻击等级 +1 (上限 LV5, 提升对手受击/防御硬直)
-#   无动作(待机等)时按 F 完全无影响
+# 方向+F 统一入口:
+#   防御硬直中 -> 脱离(ESCAPE, 消耗 50P)
+#   动作发生中 -> 推进(POP IMPETUS, 短按消耗 30P)
+#   无动作(待机等) -> 完全无影响
 func _try_f_boost() -> void:
 	if not InputHandler.is_just_pressed(player_id, InputHandler.InputButton.F):
 		return
-	if not _is_in_action():
+	if _is_in_block_stun():
+		_try_escape()
+		return
+	if _is_in_action():
+		_try_pop_impetus()
+
+
+# 是否处于"防御硬直"中(站防/蹲防被命中后的硬直窗口, 也是脱离的触发窗口)
+func _is_in_block_stun() -> bool:
+	return block_stun_timer > 0 and current_state in [
+		FighterState.State.STAND_BLOCK, FighterState.State.CROUCH_BLOCK,
+	]
+
+
+# 推进(POP IMPETUS): 动作发生中 方向+F, 短按消耗 30P
+#   - 保留当前运动状态的同时附加额外动量(动量方向由方向键控制)
+#   - 若正处于攻击状态, 攻击等级 +1 (上限 LV5, 提升对手受击/防御硬直)
+#   - 用后 120f 内无法自动回气
+#   气量不足时本次推进无效
+func _try_pop_impetus() -> void:
+	if not _spend_meter(GlobalConfig.F_ADVANCE_METER_COST):
 		return
 
-	# 训练无限气: 免消耗; 否则需够气量才能推进
-	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
-	if not training_infinite and meter < GlobalConfig.F_ADVANCE_METER_COST:
-		return
-	if not training_infinite:
-		meter -= GlobalConfig.F_ADVANCE_METER_COST
-		emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
+	advance_velocity += _f_direction() * GlobalConfig.F_ADVANCE_SPEED
+	meter_regen_lockout = GlobalConfig.F_ADVANCE_REGEN_LOCK
 
-	# 取当前按住的方向向量(支持 上/下/左/右 及 斜向)
-	var dir := Vector2(
-		float(InputHandler.get_horizontal(player_id)),
-		float(InputHandler.get_vertical(player_id))
-	)
-	if dir == Vector2.ZERO:
-		# 未指定方向时, 默认朝面向方向小幅前冲
-		dir = Vector2(1.0 if facing_right else -1.0, 0.0)
-	elif dir.length() > 1.0:
-		dir = dir.normalized()
-
-	advance_velocity += dir * GlobalConfig.F_ADVANCE_SPEED
-
-	# 处于攻击状态时提升攻击等级(投技不提升等级)
+	# 处于攻击状态时提升攻击等级(抓取不提升等级)
 	if current_state in [
 		FighterState.State.ATTACK_LIGHT, FighterState.State.ATTACK_MEDIUM,
 		FighterState.State.ATTACK_HEAVY, FighterState.State.ATTACK_SPECIAL,
 	]:
 		attack_level = min(attack_level + 1, GlobalConfig.ATTACK_LEVEL_MAX)
 		_flash_level_up()
+
+
+# 脱离(ESCAPE): 防御硬直中 方向+F, 消耗 50P
+#   - 强制挣脱, 给角色提供一个额外动量(动量方向由方向键控制)
+#   - 动作硬直 30f, 结束后角色可自由行动
+#   - 用后 300f 内无法自动回气
+#   气量不足时无法脱离
+func _try_escape() -> void:
+	if not _spend_meter(GlobalConfig.ESCAPE_METER_COST):
+		return
+
+	block_stun_timer = 0
+	advance_velocity += _f_direction() * GlobalConfig.F_ADVANCE_SPEED
+	meter_regen_lockout = GlobalConfig.ESCAPE_REGEN_LOCK
+	_change_state(FighterState.State.ESCAPE)
+
+
+# 取当前按住的方向向量(支持 上/下/左/右 及斜向); 未指定方向时默认朝面向方向前冲
+func _f_direction() -> Vector2:
+	var dir := Vector2(
+		float(InputHandler.get_horizontal(player_id)),
+		float(InputHandler.get_vertical(player_id))
+	)
+	if dir == Vector2.ZERO:
+		dir = Vector2(1.0 if facing_right else -1.0, 0.0)
+	elif dir.length() > 1.0:
+		dir = dir.normalized()
+	return dir
+
+
+# 消耗气量(训练模式无限气时免消耗); 气量不足返回 false
+func _spend_meter(cost: int) -> bool:
+	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
+	if training_infinite:
+		return true
+	if meter < cost:
+		return false
+	meter -= cost
+	emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
+	return true
+
+
+# 脱离动作处理: 保留挣脱动量(velocity.x 置零后由 advance_velocity 提供), 硬直结束可自由行动
+func _process_escape() -> void:
+	velocity.x = 0
+	if state_time >= GlobalConfig.ESCAPE_STUN_FRAMES:
+		if _is_grounded():
+			_change_state(FighterState.State.IDLE)
+		else:
+			_change_state(FighterState.State.JUMP_UP)
 
 
 # ---------- 数字方向(小键盘记法)辅助 ----------
@@ -490,6 +575,9 @@ func _update_debug_label() -> void:
 		s += " %d" % nd
 	if attack_level > GlobalConfig.ATTACK_LEVEL_MIN:
 		s += " Lv%d" % attack_level
+	# 虚血(RECOVERABLE LIFE): 显示灰色血量, 便于观察恢复过程
+	if gray_life > 0:
+		s += " G%d" % gray_life
 	state_label.text = s
 
 
@@ -514,6 +602,10 @@ func _process_attack() -> void:
 			hitbox.activate(active_seg)
 		else:
 			hitbox.deactivate()
+
+	# 攻击判定持续期间主动检测相杀: 双方判定框重叠且均未受击时立即生效
+	if active_seg and hitbox.monitoring:
+		hitbox._probe_overlaps()
 
 	# 取消检查: 攻击已过第一段触发帧即允许取消
 	var first_trigger := (current_attack.segments[0] as AttackData.Segment).trigger_frame
@@ -543,6 +635,51 @@ func _process_knockdown() -> void:
 func _process_wakeup() -> void:
 	velocity.x = 0
 	if state_time > 20:
+		_change_state(FighterState.State.IDLE)
+
+
+# ============ 相杀 (CRASH) ============
+
+# 是否可参与相杀: 必须处于攻击状态(判定框激活中)且未受击
+func can_crash() -> bool:
+	return current_state in [
+		FighterState.State.ATTACK_LIGHT, FighterState.State.ATTACK_MEDIUM,
+		FighterState.State.ATTACK_HEAVY, FighterState.State.ATTACK_SPECIAL,
+	]
+
+
+# 相杀结算: 双方攻击判定重叠(且均未受击)时, 双方产生 10% 停帧并按攻击等级互相推开
+#   攻击等级高的一方推得更少(占据优势), 等级低的一方被推得更远
+func resolve_crash(other: Fighter) -> void:
+	if not is_instance_valid(other):
+		return
+	# 停帧: 双方同时冻结
+	_crash_timer = GlobalConfig.CRASH_HITSTOP_FRAMES
+
+	# 推开距离: 基础值 + 等级系数 * (最高等级 - 本方等级)
+	var push: float = GlobalConfig.CRASH_PUSH_BASE \
+			+ GlobalConfig.CRASH_PUSH_PER_LEVEL \
+			* float(GlobalConfig.ATTACK_LEVEL_MAX - attack_level)
+	# 沿远离对手的方向推开
+	var dir: int = int(sign(global_position.x - other.global_position.x))
+	if dir == 0:
+		dir = 1 if other.facing_right else -1
+	velocity.x = push * dir
+
+	# 中断当前攻击, 进入相杀硬直
+	hitbox.deactivate()
+	current_attack = null
+	attack_frame = 0
+	_active_seg_index = -1
+	_change_state(FighterState.State.CRASHED)
+
+
+func _process_crashed() -> void:
+	# 相杀硬直期间只保留推开的速度并逐渐衰减
+	velocity.x = lerp(velocity.x, 0.0, 0.2)
+	if _crash_timer > 0:
+		_crash_timer -= 1
+	if _crash_timer <= 0 and state_time >= GlobalConfig.CRASH_HITSTOP_FRAMES:
 		_change_state(FighterState.State.IDLE)
 
 
@@ -587,9 +724,9 @@ func _handle_universal_input() -> void:
 
 
 func _handle_attack_input() -> void:
-	# 投技组合键: A + B (等同于单按 D 投技)
+	# 抓取组合键: A + B (等同于单按 D 抓取)
 	if _combo_pressed(InputHandler.InputButton.A, InputHandler.InputButton.B):
-		_attempt_throw()
+		_attempt_grab()
 		return
 	# 格挡技组合键: B + C (等同于单按 E 格挡技)
 	if _combo_pressed(InputHandler.InputButton.B, InputHandler.InputButton.C):
@@ -611,7 +748,7 @@ func _handle_attack_input() -> void:
 	elif InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C):
 		_start_attack(FighterState.State.ATTACK_HEAVY, heavy_attacks[0] if heavy_attacks.size() > 0 else null)
 	elif InputHandler.is_just_pressed(player_id, InputHandler.InputButton.D):
-		_attempt_throw()
+		_attempt_grab()
 	elif InputHandler.is_just_pressed(player_id, InputHandler.InputButton.E):
 		# 格挡技(招架)
 		_attempt_parry()
@@ -619,7 +756,7 @@ func _handle_attack_input() -> void:
 
 func _check_cancel_input() -> void:
 	# 取消链: 通常技(轻/中/重) -> 必杀技·气拳(QCF+A, 链尾)
-	#   取消时检测指令输入(半圈 QCF) + 轻击, 不依赖组合键(A+B/B+C 已改为投技/格挡技)
+	#   取消时检测指令输入(半圈 QCF) + 轻击, 不依赖组合键(A+B/B+C 已改为抓取/格挡技)
 	if current_attack and current_attack.cancel_to_special \
 			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) \
 			and _history_has_motion(MOTION_QCF):
@@ -669,7 +806,7 @@ func _can_cancel() -> bool:
 	]
 
 
-# 组合键检测: x 与 y 中有一个刚按下、另一个正按住(用于投技 A+B / 格挡技 B+C 组合输入)
+# 组合键检测: x 与 y 中有一个刚按下、另一个正按住(用于抓取 A+B / 格挡技 B+C 组合输入)
 func _combo_pressed(x: int, y: int) -> bool:
 	return (InputHandler.is_just_pressed(player_id, x) and InputHandler.is_pressed(player_id, y)) \
 		or (InputHandler.is_just_pressed(player_id, y) and InputHandler.is_pressed(player_id, x))
@@ -684,54 +821,54 @@ func _try_start_special() -> bool:
 	return true
 
 
-func _attempt_throw() -> void:
+func _attempt_grab() -> void:
 	if not opponent:
 		return
 	if is_being_grabbed:
 		return
 	var dist := global_position.distance_to(opponent.global_position)
-	# 投技以段(_throw_segment)承载防御属性(需要被拆投)与攻击属性(抓取)
-	#   成立距离取角色级 throw_range(默认全局贴身框架值, 可按角色/招式覆盖)
-	if dist < throw_range and opponent._begin_grabbed(self, _throw_segment):
-		_change_state(FighterState.State.THROW)
+	# 抓取以段(_grab_move_segment)承载防御属性(需要被拆投)与攻击属性(抓取)
+	#   成立距离取角色级 grab_range(默认全局贴身框架值, 可按角色/招式覆盖)
+	if dist < grab_range and opponent._begin_grabbed(self, _grab_move_segment):
+		_change_state(FighterState.State.GRAB)
 
 
-# 被抓取: 开启拆投窗口；seg 为抓取段(投技成立时按其伤害/击退结算)
+# 被抓取: 开启拆投窗口；seg 为抓取段(抓取成立时按其伤害/击退结算)
 func _begin_grabbed(attacker: Fighter, seg = null) -> bool:
 	if is_being_grabbed or not _is_grounded():
 		return false
 	is_being_grabbed = true
 	_grab_attacker = attacker
 	_grab_segment = seg
-	_grab_tech_window = GlobalConfig.GRAB_TECH_WINDOW
+	_grab_break_window = GlobalConfig.GRAB_BREAK_WINDOW
 	velocity.x = 0
 	_change_state(FighterState.State.GRABBED)
 	return true
 
 
-# 被抓取时每帧处理: 拆投窗口与投技成立判定
+# 被抓取时每帧处理: 拆投窗口与抓取成立判定
 func _process_grabbed() -> void:
 	velocity.x = 0
-	_grab_tech_window -= 1
+	_grab_break_window -= 1
 
-	# 拆投: 窗口内按下投技键(D)化解
+	# 拆投: 窗口内按下抓取键(D)化解
 	if is_instance_valid(_grab_attacker) \
 			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.D):
 		_break_grab()
 		return
 
-	# 窗口耗尽，投技成立: 按抓取段的伤害/击退结算
-	if _grab_tech_window <= 0:
+	# 窗口耗尽, 抓取成立: 按抓取段的伤害/击退结算
+	if _grab_break_window <= 0:
 		is_being_grabbed = false
 		var atk: Fighter = _grab_attacker
 		var seg: AttackData.Segment = _grab_segment
 		_grab_attacker = null
 		_grab_segment = null
-		var dmg: int = seg.damage if seg else GlobalConfig.THROW_DAMAGE
+		var dmg: int = seg.damage if seg else GlobalConfig.GRAB_DAMAGE
 		var kbx: float = seg.knockback_x if seg else 150.0
-		_on_thrown(dmg, kbx)
+		_on_grabbed_settle(dmg, kbx)
 		if is_instance_valid(atk):
-			atk._on_throw_landed()
+			atk._on_grab_landed()
 
 
 # 拆投成功
@@ -742,16 +879,16 @@ func _break_grab() -> void:
 	_grab_segment = null
 	_change_state(FighterState.State.IDLE)
 	if is_instance_valid(atk):
-		atk._on_throw_broken()
+		atk._on_grab_broken()
 
 
-# 投技成立(攻击方)
-func _on_throw_landed() -> void:
+# 抓取成立(攻击方)
+func _on_grab_landed() -> void:
 	_change_state(FighterState.State.IDLE)
 
 
-# 投技被拆(攻击方)
-func _on_throw_broken() -> void:
+# 抓取被拆(攻击方)
+func _on_grab_broken() -> void:
 	_change_state(FighterState.State.IDLE)
 	# 拆投成功的反击硬直/后撤
 	velocity.x = (-1 if facing_right else 1) * 150.0
@@ -786,7 +923,7 @@ func _check_block(block_state: int) -> bool:
 
 # ============ 受击系统 ============
 
-func _on_hit(source_hitbox: Area2D) -> void:
+func _on_hit(source_hitbox: Area2D, hurtbox = null) -> void:
 	if not is_instance_valid(source_hitbox):
 		return
 
@@ -799,24 +936,44 @@ func _on_hit(source_hitbox: Area2D) -> void:
 	# 命中后取消自身 F 推进(避免受击后继续滑行)
 	advance_velocity = Vector2.ZERO
 
+	# 追地 (PURSUIT): 仅对倒地/起身中的对手成立; 未倒地则本次攻击不成立
+	if seg.is_pursuit and current_state not in FighterState.DOWN_STATES:
+		return
+
+	# 甜点/酸点判定: 依据命中点落在判定框内哪个区域(需受击框提供命中点换算)
+	var spot: int = Hitbox.Spot.NONE
+	if hurtbox != null and source_hitbox.has_method("evaluate_spot"):
+		spot = source_hitbox.evaluate_spot(hurtbox)
+
+	# 追地命中: 强制对手软倒地 + 位置被推开(不影响虚血)
+	if seg.is_pursuit:
+		_apply_pursuit_hit(seg, attack_data_ref, attacker)
+		return
+
 	# 防御判定
 	if _is_blocking_segment(seg, attacker):
 		_take_block_damage(seg)
 		# 防御硬直随攻击方等级提升(LV 越高防御硬直越长)
 		block_stun_timer = int(round(seg.block_stun * GlobalConfig.attack_level_stun_mult(attacker.attack_level)))
-		emit_signal("hit_landed", self, attacker, seg, true)
+		emit_signal("hit_landed", self, attacker, seg, true, Hitbox.Spot.NONE)
 		return
 
-	# 抓取属性: 命中后将本角色置入被抓取状态(投技成立时按 seg 伤害/击退结算)
+	# 抓取属性: 命中后将本角色置入被抓取状态(抓取成立时按 seg 伤害/击退结算)
 	if seg.has_attribute(AttackData.AttackAttribute.GRAB):
 		_begin_grabbed(attacker, seg)
 		return
 
-	# 普通命中结算
-	_take_damage(seg, attack_data_ref, attacker)
+	# 普通命中结算(按甜点/酸点修正伤害)
+	var dmg := _spot_adjusted_damage(seg, spot)
+	_take_damage(dmg, seg, attack_data_ref, attacker)
 
-	# 受击硬直随攻击方等级提升(LV 越高对手硬直越长)
-	_hit_stun_remaining = int(round(seg.hit_stun * GlobalConfig.attack_level_stun_mult(attacker.attack_level)))
+	# 受击硬直随攻击方等级提升(LV 越高对手硬直越长); 酸点额外削弱, 甜点额外强化
+	var stun_mult := GlobalConfig.attack_level_stun_mult(attacker.attack_level)
+	if spot == Hitbox.Spot.SOUR:
+		stun_mult *= 0.7
+	elif spot == Hitbox.Spot.SWEET:
+		stun_mult *= 1.3
+	_hit_stun_remaining = int(round(seg.hit_stun * stun_mult))
 	hitbox.deactivate()
 	current_attack = attack_data_ref
 	_change_state(FighterState.State.HIT_STUN)
@@ -829,11 +986,48 @@ func _on_hit(source_hitbox: Area2D) -> void:
 	velocity.y = seg.knockback_y
 
 	# 通知对战场景触发打击反馈(命中定格/火花/震动/音效/连击)
-	emit_signal("hit_landed", self, attacker, seg, false)
+	emit_signal("hit_landed", self, attacker, seg, false, spot)
 
 
-# 投技成立: 应用抓取段的伤害/击退
-func _on_thrown(damage: int, knockback_x: float) -> void:
+# 按甜点/酸点修正本次命中的伤害
+#   甜点 SWEET: 伤害 x SWEET_DAMAGE_MULT; 酸点 SOUR: 伤害 x SOUR_DAMAGE_MULT
+func _spot_adjusted_damage(seg: AttackData.Segment, spot: int) -> int:
+	match spot:
+		Hitbox.Spot.SWEET:
+			return int(round(seg.damage * GlobalConfig.SWEET_DAMAGE_MULT))
+		Hitbox.Spot.SOUR:
+			return int(round(seg.damage * GlobalConfig.SOUR_DAMAGE_MULT))
+	return seg.damage
+
+
+# 追地命中结算: 强制本角色进入软倒地, 位置被推开
+#   按设计: 追地攻击不产生虚血, 但仍正常扣血
+func _apply_pursuit_hit(seg: AttackData.Segment, attack: AttackData, attacker: Fighter) -> void:
+	_take_damage(seg.damage, seg, attack, attacker, false)
+
+	# 位置被推开(沿远离对手的方向)
+	var away_dir: int = int(sign(global_position.x - attacker.global_position.x))
+	if away_dir == 0:
+		away_dir = 1 if attacker.facing_right else -1
+	global_position.x += away_dir * GlobalConfig.PURSUIT_POSITION_SHIFT
+
+	# 强制软倒地(短时间后自行起身)
+	hitbox.deactivate()
+	velocity.x = 0
+	_change_state(FighterState.State.SOFT_KNOCKDOWN)
+
+	emit_signal("hit_landed", self, attacker, seg, false, Hitbox.Spot.NONE)
+
+
+# 软倒地处理: 短暂躺地后自行起身(不进入 WAKEUP 的受身流程)
+func _process_soft_knockdown() -> void:
+	velocity.x = lerp(velocity.x, 0.0, 0.15)
+	if state_time >= GlobalConfig.PURSUIT_SOFT_KNOCKDOWN_FRAMES:
+		_change_state(FighterState.State.WAKEUP)
+
+
+# 抓取成立: 应用抓取段的伤害/击退
+func _on_grabbed_settle(damage: int, knockback_x: float) -> void:
 	_take_damage_raw(damage)
 	velocity.y = -300
 	velocity.x = knockback_x * (-1 if facing_right else 1)
@@ -853,7 +1047,7 @@ func _is_blocking_segment(seg: AttackData.Segment, attacker: Fighter) -> bool:
 	match seg.defense_property:
 		AttackData.DefenseProperty.UNBLOCKABLE:
 			return false
-		AttackData.DefenseProperty.THROW_BREAK_REQUIRED:
+		AttackData.DefenseProperty.GRAB_BREAK_REQUIRED:
 			# 需要被拆投: 不可防御(由抓取段承担命中效果)
 			return false
 		AttackData.DefenseProperty.FULL_BLOCK:
@@ -869,12 +1063,16 @@ func _is_blocking_segment(seg: AttackData.Segment, attacker: Fighter) -> bool:
 			return true
 
 
-func _take_damage(seg: AttackData.Segment, attack: AttackData, attacker: Fighter) -> void:
-	_take_damage_raw(seg.damage)
+func _take_damage(damage: int, seg: AttackData.Segment, attack: AttackData, attacker: Fighter, produce_gray := true) -> void:
+	_take_damage_raw(damage)
+	# 虚血(RECOVERABLE LIFE): 按伤害比例转化为灰色血量, 长时间未受击后恢复
+	#   追地攻击不产生虚血(produce_gray = false)
+	if produce_gray:
+		_add_gray_life(int(round(damage * GlobalConfig.GRAY_LIFE_RATIO)))
 	if attack:
 		attacker._gain_meter(attack.meter_gain)
 	# 受击方按所受伤害比例回气(防守反哺)
-	_gain_meter(int(round(seg.damage * GlobalConfig.METER_GAIN_ON_DAMAGE_RATIO)))
+	_gain_meter(int(round(damage * GlobalConfig.METER_GAIN_ON_DAMAGE_RATIO)))
 	attacker.combo_count += 1
 
 
@@ -892,6 +1090,52 @@ func _take_damage_raw(damage: int) -> void:
 		_on_knockout()
 
 
+# ===== 虚血 (RECOVERABLE LIFE) =====
+
+# 累积灰色血量(不超过上限), 并重置"未受击"计时
+func _add_gray_life(amount: int) -> void:
+	if amount <= 0:
+		return
+	gray_life = mini(gray_life + amount, GlobalConfig.MAX_HEALTH)
+	_gray_life_timer = 0
+	emit_signal("gray_life_changed", gray_life, GlobalConfig.MAX_HEALTH)
+
+
+# 虚血恢复: 长时间(3S)未受击后, 每逻辑帧把灰血转化为实际血量
+func _tick_gray_life() -> void:
+	if gray_life <= 0:
+		_gray_life_timer = 0
+		return
+	# 未受击计时达到阈值后才开始恢复
+	if _gray_life_timer < GlobalConfig.GRAY_LIFE_RECOVER_DELAY:
+		_gray_life_timer += 1
+		return
+	var recover: int = mini(GlobalConfig.GRAY_LIFE_RECOVER_PER_FRAME, gray_life)
+	if recover <= 0:
+		return
+	# 灰血不能把血量恢复超过上限
+	var space := GlobalConfig.MAX_HEALTH - health
+	recover = mini(recover, maxi(space, 0))
+	if recover <= 0:
+		# 血量已满, 清空灰血
+		gray_life = 0
+		emit_signal("gray_life_changed", gray_life, GlobalConfig.MAX_HEALTH)
+		return
+	gray_life -= recover
+	health += recover
+	emit_signal("gray_life_changed", gray_life, GlobalConfig.MAX_HEALTH)
+	emit_signal("health_changed", health, GlobalConfig.MAX_HEALTH)
+
+
+# 血量与虚血一起重置(回合开始/训练重置)
+func reset_vitals() -> void:
+	health = GlobalConfig.MAX_HEALTH
+	gray_life = 0
+	_gray_life_timer = 0
+	emit_signal("health_changed", health, GlobalConfig.MAX_HEALTH)
+	emit_signal("gray_life_changed", gray_life, GlobalConfig.MAX_HEALTH)
+
+
 func _gain_meter(amount: int) -> void:
 	meter = min(meter + amount, GlobalConfig.MAX_METER)
 	emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
@@ -899,9 +1143,16 @@ func _gain_meter(amount: int) -> void:
 
 # 气槽被动回充: 仅在"自由/中立"状态且非训练无限气时回气
 #   按逻辑帧(60 FPS)计量: 每帧恢复 METER_REGEN_PER_FRAME P(不满时)
+#   推进(120f)/脱离(300f)后的回气锁定期间不回气
 func _tick_meter(delta: float) -> void:
 	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
-	if current_state in METER_REGEN_STATES and not training_infinite:
+	if training_infinite:
+		return
+	# 回气锁定倒计时(推进/脱离后一段时间内禁止回气)
+	if meter_regen_lockout > 0:
+		meter_regen_lockout -= 1
+		return
+	if current_state in METER_REGEN_STATES:
 		var gain := int(round(GlobalConfig.METER_REGEN_PER_FRAME * delta * 60.0))
 		var before := meter
 		meter = min(meter + gain, GlobalConfig.MAX_METER)

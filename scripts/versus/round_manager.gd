@@ -55,12 +55,12 @@ func _start_round() -> void:
 	timer_running = false
 	pause_between_rounds = false
 
-	# 重置角色状态: 每局游戏开始, 血量与气槽均默认满值(100 H / 100 P)
+	# 重置角色状态: 每局游戏开始, 血量与气槽均默认满值(100 H / 100 P), 虚血清空
 	if p1:
-		p1.health = GlobalConfig.MAX_HEALTH
+		p1.reset_vitals()
 		p1.meter = GlobalConfig.MAX_METER
 	if p2:
-		p2.health = GlobalConfig.MAX_HEALTH
+		p2.reset_vitals()
 		p2.meter = GlobalConfig.MAX_METER
 
 	# 训练模式: 无限时、不败北, 直接开始

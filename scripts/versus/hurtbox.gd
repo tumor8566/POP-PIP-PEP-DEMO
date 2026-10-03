@@ -24,4 +24,5 @@ func _on_area_entered(hitbox: Area2D) -> void:
 	if hitbox.has_method("get_owner_fighter") and hitbox.get_owner_fighter() == owner_fighter:
 		return
 	if owner_fighter.has_method("_on_hit"):
-		owner_fighter._on_hit(hitbox)
+		# 传入受击框自身: 攻击方据此换算命中点(甜点/酸点)并判断追地是否成立
+		owner_fighter._on_hit(hitbox, self)
