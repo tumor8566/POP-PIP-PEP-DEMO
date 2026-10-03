@@ -1,0 +1,198 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/versus/versus_battle.gd" id="1_versus"]
+[ext_resource type="Script" path="res://scripts/versus/round_manager.gd" id="2_round"]
+[ext_resource type="Script" path="res://scripts/hud/battle_hud.gd" id="3_hud"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_floor"]
+extents = Vector2(960, 150)
+
+[node name="VersusBattle" type="Node2D"]
+script = ExtResource("1_versus")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(960, 450)
+
+[node name="Stage" type="Node2D" parent="."]
+
+[node name="Background" type="ColorRect" parent="Stage"]
+layout_mode = 1
+size = Vector2(1920, 900)
+custom_minimum_size = Vector2(1920, 900)
+color = Color(0.15, 0.15, 0.2, 1)
+
+[node name="FloorLine" type="ColorRect" parent="Stage"]
+layout_mode = 1
+position = Vector2(0, 562)
+size = Vector2(1920, 4)
+custom_minimum_size = Vector2(1920, 4)
+color = Color(0.4, 0.4, 0.5, 1)
+
+[node name="Floor" type="StaticBody2D" parent="."]
+position = Vector2(0, 562)
+
+[node name="FloorCollision" type="CollisionShape2D" parent="Floor"]
+position = Vector2(960, 150)
+shape = SubResource("RectangleShape2D_floor")
+
+[node name="Fighters" type="Node2D" parent="."]
+
+[node name="RoundManager" type="Node" parent="."]
+script = ExtResource("2_round")
+
+[node name="BattleHUD" type="CanvasLayer" parent="."]
+script = ExtResource("3_hud")
+
+[node name="HUDContainer" type="Control" parent="BattleHUD"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="P1Side" type="Control" parent="BattleHUD/HUDContainer"]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.35
+anchor_bottom = 0.15
+offset_left = 30.0
+offset_top = 20.0
+
+[node name="NameLabel" type="Label" parent="BattleHUD/HUDContainer/P1Side"]
+layout_mode = 1
+offset_right = 200.0
+offset_bottom = 25.0
+text = "P1"
+
+[node name="HealthBar" type="ProgressBar" parent="BattleHUD/HUDContainer/P1Side"]
+layout_mode = 1
+offset_top = 28.0
+offset_right = 350.0
+offset_bottom = 48.0
+max_value = 1000.0
+value = 1000.0
+tint_progress = Color(0, 1, 0, 1)
+tint_under = Color(1, 0, 0, 1)
+
+[node name="HealthBG" type="ColorRect" parent="BattleHUD/HUDContainer/P1Side/HealthBar"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.3, 0.1, 0.1, 1)
+
+[node name="MeterBar" type="ProgressBar" parent="BattleHUD/HUDContainer/P1Side"]
+layout_mode = 1
+offset_top = 52.0
+offset_right = 350.0
+offset_bottom = 62.0
+max_value = 1000.0
+tint_progress = Color(0.3, 0.6, 1, 1)
+
+[node name="MeterBG" type="ColorRect" parent="BattleHUD/HUDContainer/P1Side/MeterBar"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.1, 0.1, 0.3, 1)
+
+[node name="RoundIndicators" type="HBoxContainer" parent="BattleHUD/HUDContainer/P1Side"]
+layout_mode = 1
+offset_top = 65.0
+offset_right = 350.0
+offset_bottom = 85.0
+
+[node name="P2Side" type="Control" parent="BattleHUD/HUDContainer"]
+layout_mode = 1
+anchor_left = 0.65
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.15
+offset_right = -30.0
+offset_top = 20.0
+
+[node name="NameLabel" type="Label" parent="BattleHUD/HUDContainer/P2Side"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -200.0
+offset_bottom = 25.0
+text = "P2"
+horizontal_alignment = 2
+
+[node name="HealthBar" type="ProgressBar" parent="BattleHUD/HUDContainer/P2Side"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -350.0
+offset_top = 28.0
+offset_bottom = 48.0
+max_value = 1000.0
+value = 1000.0
+tint_progress = Color(0, 1, 0, 1)
+tint_under = Color(1, 0, 0, 1)
+
+[node name="HealthBG" type="ColorRect" parent="BattleHUD/HUDContainer/P2Side/HealthBar"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.3, 0.1, 0.1, 1)
+
+[node name="MeterBar" type="ProgressBar" parent="BattleHUD/HUDContainer/P2Side"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -350.0
+offset_top = 52.0
+offset_bottom = 62.0
+max_value = 1000.0
+tint_progress = Color(0.3, 0.6, 1, 1)
+
+[node name="MeterBG" type="ColorRect" parent="BattleHUD/HUDContainer/P2Side/MeterBar"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.1, 0.1, 0.3, 1)
+
+[node name="RoundIndicators" type="HBoxContainer" parent="BattleHUD/HUDContainer/P2Side"]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -350.0
+offset_top = 65.0
+offset_bottom = 85.0
+
+[node name="CenterInfo" type="VBoxContainer" parent="BattleHUD/HUDContainer"]
+layout_mode = 1
+anchor_left = 0.4
+anchor_right = 0.6
+anchor_top = 0.0
+anchor_bottom = 0.12
+alignment = 1
+
+[node name="TimerLabel" type="Label" parent="BattleHUD/HUDContainer/CenterInfo"]
+layout_mode = 2
+offset_right = 256.0
+offset_bottom = 50.0
+text = "99"
+horizontal_alignment = 1
+
+[node name="ComboLabel" type="Label" parent="BattleHUD/HUDContainer/CenterInfo"]
+layout_mode = 2
+offset_top = 54.0
+offset_right = 256.0
+offset_bottom = 74.0
+text = ""
+horizontal_alignment = 1
+visible = false
+
+[node name="RoundLabel" type="Label" parent="BattleHUD/HUDContainer"]
+layout_mode = 1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -30.0
+offset_right = 150.0
+offset_bottom = 30.0
+text = "Round 1"
+horizontal_alignment = 1
+visible = false

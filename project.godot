@@ -1,0 +1,33 @@
+; Engine configuration file.
+; Godot 4 项目配置 (config_version=5)
+; 输入动作由 scripts/autoload/input_handler.gd 在运行时通过 InputMap 注册，
+; 因此这里不再保留 [input] 段（Godot 4 的 keycode 体系与 3.x 不兼容）。
+
+config_version=5
+
+[application]
+
+config/name="FightingGame"
+config/description="2D横版格斗游戏"
+run/main_scene="res://scenes/menu/main_menu.tscn"
+config/icon="res://icon.png"
+
+[autoload]
+
+GlobalConfig="*res://scripts/autoload/global_config.gd"
+InputHandler="*res://scripts/autoload/input_handler.gd"
+AudioManager="*res://scripts/autoload/audio_manager.gd"
+MatchData="*res://scripts/autoload/match_data.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"

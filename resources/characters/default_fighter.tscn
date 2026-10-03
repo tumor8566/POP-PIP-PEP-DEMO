@@ -1,0 +1,48 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/versus/fighter.gd" id="1_fighter"]
+[ext_resource type="Script" path="res://scripts/versus/hurtbox.gd" id="2_hurt"]
+[ext_resource type="Script" path="res://scripts/versus/hitbox.gd" id="3_hit"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_1"]
+radius = 20.0
+height = 60.0
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+extents = Vector2(25, 50)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_2"]
+extents = Vector2(40, 30)
+
+[node name="DefaultFighter" type="CharacterBody2D" groups=["fighters"]]
+script = ExtResource("1_fighter")
+
+[node name="Sprite" type="Sprite2D" parent="."]
+position = Vector2(0, -60)
+scale = Vector2(2, 2)
+modulate = Color(0.8, 0.8, 0.8, 1)
+
+[node name="CollisionShape" type="CollisionShape2D" parent="."]
+position = Vector2(0, -20)
+shape = SubResource("CapsuleShape2D_1")
+
+[node name="Hurtbox" type="Area2D" parent="."]
+script = ExtResource("2_hurt")
+
+[node name="HurtboxCollision" type="CollisionShape2D" parent="Hurtbox"]
+position = Vector2(0, -30)
+shape = SubResource("RectangleShape2D_1")
+
+[node name="Hitbox" type="Area2D" parent="."]
+position = Vector2(0, 0)
+script = ExtResource("3_hit")
+
+[node name="HitboxCollision" type="CollisionShape2D" parent="Hitbox"]
+position = Vector2(0, 0)
+shape = SubResource("RectangleShape2D_2")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+
+[node name="StateLabel" type="Label" parent="."]
+position = Vector2(0, -120)
+text = "IDLE"

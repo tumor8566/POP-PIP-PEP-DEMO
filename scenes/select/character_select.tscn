@@ -1,0 +1,203 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/select/character_select.gd" id="1_select"]
+
+[node name="CharacterSelect" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_select")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.08, 0.08, 0.12, 1)
+
+[node name="TopLabel" type="Label" parent="."]
+layout_mode = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_right = 300.0
+offset_top = 10.0
+offset_bottom = 50.0
+text = "选择角色"
+horizontal_alignment = 1
+
+[node name="P1Panel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.1
+anchor_right = 0.2
+anchor_bottom = 0.9
+offset_left = 20.0
+offset_right = -20.0
+
+[node name="P1Label" type="Label" parent="P1Panel"]
+layout_mode = 2
+text = "1P"
+horizontal_alignment = 1
+
+[node name="P1Portrait" type="TextureRect" parent="P1Panel"]
+layout_mode = 2
+custom_minimum_size = Vector2(180, 320)
+expand_mode = 3
+stretch_mode = 5
+
+[node name="P1NameLabel" type="Label" parent="P1Panel"]
+layout_mode = 2
+text = "角色名"
+horizontal_alignment = 1
+
+[node name="P1ColorLabel" type="Label" parent="P1Panel"]
+layout_mode = 2
+text = "颜色: 默认"
+horizontal_alignment = 1
+
+[node name="P1ReadyLabel" type="Label" parent="P1Panel"]
+layout_mode = 2
+text = "选择角色..."
+horizontal_alignment = 1
+
+[node name="P1Controls" type="Label" parent="P1Panel"]
+layout_mode = 2
+text = "WASD 移动 | J 颜色- K 颜色+ | Enter 确认 | O 取消"
+horizontal_alignment = 1
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.2
+anchor_right = 0.8
+anchor_top = 0.15
+anchor_bottom = 0.85
+
+[node name="CharacterGrid" type="GridContainer" parent="CenterContainer"]
+layout_mode = 2
+columns = 4
+
+[node name="Slot0" type="Panel" parent="CenterContainer/CharacterGrid"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 120)
+
+[node name="Background" type="ColorRect" parent="CenterContainer/CharacterGrid/Slot0"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.2, 0.2, 0.25, 1)
+
+[node name="NameLabel" type="Label" parent="CenterContainer/CharacterGrid/Slot0"]
+layout_mode = 1
+anchor_left = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -85.0
+text = "格斗家"
+horizontal_alignment = 1
+
+[node name="Slot1" type="Panel" parent="CenterContainer/CharacterGrid"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 120)
+
+[node name="Background" type="ColorRect" parent="CenterContainer/CharacterGrid/Slot1"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.2, 0.2, 0.25, 1)
+
+[node name="NameLabel" type="Label" parent="CenterContainer/CharacterGrid/Slot1"]
+layout_mode = 1
+anchor_left = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -85.0
+text = "剑士"
+horizontal_alignment = 1
+
+[node name="Slot2" type="Panel" parent="CenterContainer/CharacterGrid"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 120)
+
+[node name="Background" type="ColorRect" parent="CenterContainer/CharacterGrid/Slot2"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.2, 0.2, 0.25, 1)
+
+[node name="NameLabel" type="Label" parent="CenterContainer/CharacterGrid/Slot2"]
+layout_mode = 1
+anchor_left = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -85.0
+text = "拳霸"
+horizontal_alignment = 1
+
+[node name="Slot3" type="Panel" parent="CenterContainer/CharacterGrid"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 120)
+
+[node name="Background" type="ColorRect" parent="CenterContainer/CharacterGrid/Slot3"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.2, 0.2, 0.25, 1)
+
+[node name="NameLabel" type="Label" parent="CenterContainer/CharacterGrid/Slot3"]
+layout_mode = 1
+anchor_left = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = -85.0
+text = "忍者"
+horizontal_alignment = 1
+
+[node name="P2Panel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.8
+anchor_top = 0.1
+anchor_right = 1.0
+anchor_bottom = 0.9
+offset_left = 20.0
+offset_right = -20.0
+
+[node name="P2Label" type="Label" parent="P2Panel"]
+layout_mode = 2
+text = "2P"
+horizontal_alignment = 1
+
+[node name="P2Portrait" type="TextureRect" parent="P2Panel"]
+layout_mode = 2
+custom_minimum_size = Vector2(180, 320)
+expand_mode = 3
+stretch_mode = 5
+
+[node name="P2NameLabel" type="Label" parent="P2Panel"]
+layout_mode = 2
+text = "角色名"
+horizontal_alignment = 1
+
+[node name="P2ColorLabel" type="Label" parent="P2Panel"]
+layout_mode = 2
+text = "颜色: 默认"
+horizontal_alignment = 1
+
+[node name="P2ReadyLabel" type="Label" parent="P2Panel"]
+layout_mode = 2
+text = "选择角色..."
+horizontal_alignment = 1
+
+[node name="P2Controls" type="Label" parent="P2Panel"]
+layout_mode = 2
+text = "方向键 移动 | , 颜色- . 颜色+ | Enter 确认 | P 取消"
+horizontal_alignment = 1
+
+[node name="BackHint" type="Label" parent="."]
+layout_mode = 1
+anchor_left = 0.5
+anchor_right = 0.5
+anchor_top = 0.9
+offset_left = -200.0
+offset_right = 200.0
+offset_top = -30.0
+text = "ESC 返回主菜单"
+horizontal_alignment = 1

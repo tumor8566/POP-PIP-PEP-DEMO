@@ -1,0 +1,16 @@
+# Godot
+.godot/
+*.import
+*.translation
+*.uid
+
+# Build
+export/
+build/
+
+# User data
+user://
+
+# Misc
+.DS_Store
+*.log
