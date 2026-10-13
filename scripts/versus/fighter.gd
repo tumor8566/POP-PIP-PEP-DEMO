@@ -149,8 +149,7 @@ func _setup_default_attacks() -> void:
 	s_light.hitbox_size = Vector2(120, 60)
 	s_light.trigger_frame = 4
 	s_light.active_duration = 3
-	# 甜点 (SWEET): 判定框最靠近对手的右侧 30%(命中此处伤害提高并有额外演出)
-	s_light.sweet_spot = Rect2(0.7, 0.0, 0.3, 1.0)
+	# 无甜点/酸点: 甜点酸点仅部分攻击动作具备, 轻攻击不属于此类
 	atk_light.segments = [s_light]
 	light_attacks.append(atk_light)
 
@@ -179,8 +178,7 @@ func _setup_default_attacks() -> void:
 	m_seg2.hitbox_size = Vector2(150, 50)
 	m_seg2.trigger_frame = 14
 	m_seg2.active_duration = 4
-	# 酸点 (SOUR): 判定框最远离对手的左侧 30%(命中此处伤害降低、演出削弱)
-	m_seg2.sour_spot = Rect2(0.0, 0.0, 0.3, 1.0)
+	# 无甜点/酸点: 中攻击不属于"具备甜点酸点"的招式
 	atk_medium.segments = [m_seg1, m_seg2]
 	medium_attacks.append(atk_medium)
 
@@ -201,8 +199,10 @@ func _setup_default_attacks() -> void:
 	s_heavy.hitbox_size = Vector2(160, 60)
 	s_heavy.trigger_frame = 10
 	s_heavy.active_duration = 5
-	# 甜点: 判定框靠对手侧 25%
-	s_heavy.sweet_spot = Rect2(0.75, 0.0, 0.25, 1.0)
+	# 甜点 (SWEET): 重攻击是现阶段唯一保留甜点的招式。
+	#   区域为占位值(整个判定框), 待用户提供精准数据后替换;
+	#   此处不使用"右侧 25%"这类按比例划分的描述方式。
+	s_heavy.sweet_spot = Rect2(0.0, 0.0, 1.0, 1.0)
 	atk_heavy.segments = [s_heavy]
 	heavy_attacks.append(atk_heavy)
 

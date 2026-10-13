@@ -91,8 +91,9 @@ class Segment extends RefCounted:
 	var hitbox_size: Vector2 = Vector2(60, 40)
 
 	# 甜点 (SWEET) / 酸点 (SOUR): 判定框内部的相对区域(Rect2, 0~1 归一化坐标)
-	#   为 size == Vector2.ZERO 时表示该招式没有此判定区
-	#   例如 Rect2(0.7, 0.0, 0.3, 1.0) 表示判定框最靠近对手的右侧 30% 纵向全高区域
+	#   注意: 仅部分攻击动作具备甜点/酸点, 并非所有招式都有;
+	#   size == Vector2.ZERO(默认值)表示该段没有此判定区。
+	#   具体区域数值由设计侧提供, 此处只定义存储与判定机制。
 	var sweet_spot := Rect2()
 	var sour_spot := Rect2()
 

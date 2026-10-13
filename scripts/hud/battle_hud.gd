@@ -127,7 +127,7 @@ func _setup_training_panel() -> void:
 	vbox.add_child(hint3)
 
 	var hint4 := Label.new()
-	hint4.text = "系统: 虚血(灰段3S后恢复) · 甜点/酸点(判定框内区域) · 追地(打倒地) · 相杀(判定相撞)"
+	hint4.text = "系统: 虚血(灰段3S后恢复) · 甜点/酸点(仅部分招式) · 追地(打倒地) · 相杀(判定相撞)"
 	hint4.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0, 1))
 	hint4.add_theme_font_size_override("font_size", 13)
 	vbox.add_child(hint4)
