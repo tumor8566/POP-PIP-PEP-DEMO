@@ -97,8 +97,9 @@ var gray_life := 0# 当前灰色血量(不参与 KO 判定)
 var _gray_life_timer := 0      # 未受击计时(帧), 达到阈值后开始恢复
 
 # ===== 追地 (PURSUIT) =====
-#   对倒地/起身中的对手成立的追地攻击(命中后强制对手软倒地, 且不产生虚血)
-var _pursuit_active := false   # 本次攻击是否为追地攻击
+#   不按招式设标记: 攻击判定框能否实际打到倒地/起身中的对手, 由命中时的
+#   受击框重叠自动判定(_on_hit 被调用即说明判定框已重叠)。
+#   追地命中: 强制对手软倒地, 位置被推开, 且不产生虚血。
 
 # ===== 相杀 (CRASH) =====
 var _crash_timer := 0          # 相杀硬直剩余帧
@@ -182,9 +183,9 @@ func _setup_default_attacks() -> void:
 	medium_attacks.append(atk_medium)
 
 	# ============ 重攻击: 1段，蹲姿破坏 + 对腹 ============
-	#   兼具追地(PURSUIT)性质: 对倒地/起身中的对手成立, 命中强制软倒地
+	#   通用通常技(站/蹲/跳均可出); 对倒地对手是否成立由判定框能否实际打到决定
 	var atk_heavy := AttackData.new()
-	atk_heavy.attack_name = "重拳·追地"
+	atk_heavy.attack_name = "重拳"
 	atk_heavy.attack_type = AttackData.AttackType.HEAVY
 	atk_heavy.attack_level = 3
 	atk_heavy.meter_gain = 10
@@ -198,8 +199,6 @@ func _setup_default_attacks() -> void:
 	s_heavy.hitbox_size = Vector2(160, 60)
 	s_heavy.trigger_frame = 10
 	s_heavy.active_duration = 5
-	# 追地: 仅对倒地类状态成立; 命中后强制对手软倒地, 且不产生虚血
-	s_heavy.is_pursuit = true
 	# 甜点: 判定框靠对手侧 25%
 	s_heavy.sweet_spot = Rect2(0.75, 0.0, 0.25, 1.0)
 	atk_heavy.segments = [s_heavy]
@@ -936,18 +935,17 @@ func _on_hit(source_hitbox: Area2D, hurtbox = null) -> void:
 	# 命中后取消自身 F 推进(避免受击后继续滑行)
 	advance_velocity = Vector2.ZERO
 
-	# 追地 (PURSUIT): 仅对倒地/起身中的对手成立; 未倒地则本次攻击不成立
-	if seg.is_pursuit and current_state not in FighterState.DOWN_STATES:
-		return
-
 	# 甜点/酸点判定: 依据命中点落在判定框内哪个区域(需受击框提供命中点换算)
 	var spot: int = Hitbox.Spot.NONE
 	if hurtbox != null and source_hitbox.has_method("evaluate_spot"):
 		spot = source_hitbox.evaluate_spot(hurtbox)
 
-	# 追地命中: 强制对手软倒地 + 位置被推开(不影响虚血)
-	if seg.is_pursuit:
-		_apply_pursuit_hit(seg, attack_data_ref, attacker)
+	# 追地 (PURSUIT): 不按招式设标记, 而是看判定框"能不能实际打到"
+	#   本函数能被调用即说明攻击判定框已与倒地中角色的受击框发生重叠;
+	#   因此只要对手处于倒地/起身状态, 本次命中就是追地。
+	var is_pursuit_hit: bool = current_state in FighterState.DOWN_STATES
+	if is_pursuit_hit:
+		_apply_pursuit_hit(seg, attack_data_ref, attacker, spot)
 		return
 
 	# 防御判定
@@ -1001,9 +999,9 @@ func _spot_adjusted_damage(seg: AttackData.Segment, spot: int) -> int:
 
 
 # 追地命中结算: 强制本角色进入软倒地, 位置被推开
-#   按设计: 追地攻击不产生虚血, 但仍正常扣血
-func _apply_pursuit_hit(seg: AttackData.Segment, attack: AttackData, attacker: Fighter) -> void:
-	_take_damage(seg.damage, seg, attack, attacker, false)
+#   按设计: 追地攻击不产生虚血, 但仍正常扣血; 甜点/酸点照常生效
+func _apply_pursuit_hit(seg: AttackData.Segment, attack: AttackData, attacker: Fighter, spot: int = Hitbox.Spot.NONE) -> void:
+	_take_damage(_spot_adjusted_damage(seg, spot), seg, attack, attacker, false)
 
 	# 位置被推开(沿远离对手的方向)
 	var away_dir: int = int(sign(global_position.x - attacker.global_position.x))

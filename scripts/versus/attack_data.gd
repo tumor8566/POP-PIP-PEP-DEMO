@@ -96,10 +96,6 @@ class Segment extends RefCounted:
 	var sweet_spot := Rect2()
 	var sour_spot := Rect2()
 
-	# 追地 (PURSUIT): 仅对倒地/起身中的对手成立的追地攻击
-	#   命中后强制对手进入软倒地, 且不产生虚血
-	var is_pursuit := false
-
 	var trigger_frame: int = 0
 	var active_duration: int = 4
 

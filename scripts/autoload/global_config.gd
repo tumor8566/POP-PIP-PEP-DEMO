@@ -91,8 +91,8 @@ const SWEET_SHAKE_BONUS := 12.0             # 甜点额外震屏强度
 const SOUR_SHAKE_MULT := 0.5                # 酸点震屏折扣
 
 # ===== 追地 (PURSUIT) =====
-#   仅当对手处于倒地(KNOCKDOWN)/起身(WAKEUP)状态时才成立的追地攻击。
-#   命中后强制对手进入"软倒地"(SOFT_KNOCKDOWN, 短时间后自行起身),
+#   不按招式设标记: 攻击判定框能否实际打到倒地(KNOCKDOWN)/起身(WAKEUP)中的对手,
+#   由命中时受击框是否发生重叠自动判定。命中后强制对手进入软倒地并推开位置,
 #   追地攻击不产生虚血(灰色血量)。
 const PURSUIT_SOFT_KNOCKDOWN_FRAMES := 90   # 追地命中后对手软倒地持续帧(90f = 1.5S)
 const PURSUIT_POSITION_SHIFT := 26.0        # 追地命中时把对手位置推开/拉近的距离
