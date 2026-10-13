@@ -32,6 +32,8 @@ var grab_range := GlobalConfig.GRAB_RANGE
 
 # 回气锁定帧: 推进(120f)/脱离(300f)用后一段时间内无法自动回气
 var meter_regen_lockout := 0
+# 回气帧计数: 每 METER_REGEN_FRAMES_PER_P 逻辑帧恢复 1P(整数计数, 无累积误差)
+var _meter_regen_frames := 0
 
 # 状态
 var current_state := FighterState.State.INTRO
@@ -1130,6 +1132,7 @@ func reset_vitals() -> void:
 	health = GlobalConfig.MAX_HEALTH
 	gray_life = 0
 	_gray_life_timer = 0
+	_meter_regen_frames = 0
 	emit_signal("health_changed", health, GlobalConfig.MAX_HEALTH)
 	emit_signal("gray_life_changed", gray_life, GlobalConfig.MAX_HEALTH)
 
@@ -1140,9 +1143,10 @@ func _gain_meter(amount: int) -> void:
 
 
 # 气槽被动回充: 仅在"自由/中立"状态且非训练无限气时回气
-#   按逻辑帧(60 FPS)计量: 每帧恢复 METER_REGEN_PER_FRAME P(不满时)
+#   速率: 每 METER_REGEN_FRAMES_PER_P 逻辑帧恢复 1P(默认 6f/P = 每秒 10P)
+#   按逻辑帧计数实现(而非小数累积), 避免 1/6 这类循环小数产生累积误差
 #   推进(120f)/脱离(300f)后的回气锁定期间不回气
-func _tick_meter(delta: float) -> void:
+func _tick_meter(_delta: float) -> void:
 	var training_infinite := (MatchData.current_mode == MatchData.GameMode.TRAINING and MatchData.training_meter_infinite)
 	if training_infinite:
 		return
@@ -1150,12 +1154,19 @@ func _tick_meter(delta: float) -> void:
 	if meter_regen_lockout > 0:
 		meter_regen_lockout -= 1
 		return
-	if current_state in METER_REGEN_STATES:
-		var gain := int(round(GlobalConfig.METER_REGEN_PER_FRAME * delta * 60.0))
-		var before := meter
-		meter = min(meter + gain, GlobalConfig.MAX_METER)
-		if meter != before:
-			emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
+	# 非自由/中立状态: 不回气, 并清零帧计数(回气只统计处于中立状态的帧)
+	if current_state not in METER_REGEN_STATES:
+		_meter_regen_frames = 0
+		return
+
+	_meter_regen_frames += 1
+	if _meter_regen_frames < GlobalConfig.METER_REGEN_FRAMES_PER_P:
+		return
+	_meter_regen_frames = 0
+	var before := meter
+	meter = min(meter + 1, GlobalConfig.MAX_METER)
+	if meter != before:
+		emit_signal("meter_changed", meter, GlobalConfig.MAX_METER)
 
 
 # 施加命中定格帧数(取较大值, 避免被更轻的连段打断冻结)

@@ -70,7 +70,9 @@ const ESCAPE_REGEN_LOCK := 300        # 脱离后 300f 内无法自动回气
 
 # 能量条(气槽)系统 (满值 100 P, 每局开始默认 100 P)
 #   逻辑帧为 1 秒 60 帧, 故"每帧"即按 60 FPS 计量
-const METER_REGEN_PER_FRAME := 6            # 中立/自由状态每逻辑帧自动回气(不满时)
+#   回气速率: 每 METER_REGEN_FRAMES_PER_P 逻辑帧恢复 1P
+#   (默认 6f/P => 每秒 10P, 满槽 100P 约需 10 秒)
+const METER_REGEN_FRAMES_PER_P := 6        # 恢复 1P 所需的逻辑帧数(中立/自由状态, 不满时)
 const METER_GAIN_ON_DAMAGE_RATIO := 0.5     # 受击方按所受伤害比例回气(防守反哺)
 
 # ===== 虚血 (RECOVERABLE LIFE) =====
