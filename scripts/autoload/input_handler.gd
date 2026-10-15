@@ -15,6 +15,10 @@ const P2_PREFIX := "p2_"
 # 输入缓冲(帧数)
 const INPUT_BUFFER := 8
 
+# 指令识别历史窗口(帧): 只存数字方向, 比按钮缓冲长——
+#   半圈/龙拳指令(236/214/623)按人类出招速度约需 9~15 帧, 8 帧装不下
+const MOTION_HISTORY_FRAMES := 24
+
 # 自定义按键配置
 const INPUT_CFG := "user://input.cfg"
 
@@ -80,6 +84,11 @@ var p2_state: Dictionary = {}
 # 输入历史(用于指令识别)
 var _p1_history: Array = []
 var _p2_history: Array = []
+
+# 指令识别专用方向历史(屏幕绝对数字方向, 最早 -> 最新, 长度 MOTION_HISTORY_FRAMES)
+#   与 _p1_history(8 帧按钮缓冲)分离: 指令需要更长窗口, 取消缓冲需要短窗口
+var _p1_motion_dirs: Array = []
+var _p2_motion_dirs: Array = []
 
 # 玩家自定义覆盖: action -> keycode (覆盖后该动作只保留这一枚按键)
 var _custom: Dictionary = {}
@@ -247,6 +256,9 @@ func _update_player_state(player: int, prefix: String, state: Dictionary, histor
 	while history.size() > INPUT_BUFFER:
 		history.pop_front()
 
+	# 更新指令识别方向历史(每帧一条, 只存数字方向)
+	push_motion_dir(player, int(input_entry.get("dir", 5)))
+
 
 func _build_input_entry(state: Dictionary) -> Dictionary:
 	var h := 0
@@ -333,6 +345,28 @@ func get_history_dirs(player: int) -> Array:
 	for e in hist:
 		out.append(int(e.get("dir", 5)))
 	return out
+
+
+# ---------- 指令识别方向历史(长窗口) ----------
+
+# 追加一帧方向(每帧由 _update_player_state 调用; 测试/脚本也可直接注入)
+func push_motion_dir(player: int, dir: int) -> void:
+	var hist := _p1_motion_dirs if player == 1 else _p2_motion_dirs
+	hist.append(dir)
+	while hist.size() > MOTION_HISTORY_FRAMES:
+		hist.pop_front()
+
+
+# 取某玩家的指令识别方向历史(最早 -> 最新, 拷贝)
+func get_motion_dirs(player: int) -> Array:
+	var hist := _p1_motion_dirs if player == 1 else _p2_motion_dirs
+	return hist.duplicate()
+
+
+# 清除某玩家的指令历史(必杀技命中指令后调用: "消耗"这次输入, 防止重复触发)
+func clear_motion_history(player: int) -> void:
+	var hist := _p1_motion_dirs if player == 1 else _p2_motion_dirs
+	hist.clear()
 
 
 # 获取玩家垂直输入方向 (-1上, 0无, 1下)

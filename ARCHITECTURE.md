@@ -73,8 +73,8 @@ FightingGame/
 ### 3. 输入系统 (InputHandler)
 
 - 双人独立输入: P1用WASD+JKLIO, P2用方向键+Numpad
-- 8帧输入缓冲
-- 输入历史记录(为必杀技指令识别做准备)
+- 8帧按钮输入缓冲(取消窗口)
+- 24帧指令识别方向历史(与按钮缓冲分离, 详见第11节)
 
 ### 4. 对战系统 (RoundManager)
 
@@ -134,6 +134,21 @@ KNOCKDOWN(击飞滑行) --落地--> LIEDOWN(躺地)
 - `Hitbox.deactivate()` 失效时会把碰撞形状挪到远处（`shape_node.position = (100000, 0)`），而非仅置 `monitoring = false`：Area2D 监视是单向持续注册的，形状留在原处会让对方受击框保持"已进入"而不产生退出事件，导致下次激活恢复几何时**不再触发 `area_entered`，命中被静默漏掉**（第二段及以后全部丢判定）。
 - 不要用 `CollisionShape2D.disabled` 切换（运行时重新启用不会与已有监视者重配）或 `monitorable` 切换（物理服务器重配监视对有延迟，进入信号会晚于判定框失效到达，同样漏命中）。
 - 角色 `.tscn` 中的判定框/受击框形状子资源必须 `resource_local_to_scene = true`：否则多实例共享同一 `RectangleShape2D`，`_apply_segment()` 改写 `extents` 会互相污染。
+
+### 11. 必杀技指令 (QCF 236 / QCB 214 / DP 623)
+
+指令识别基于**朝向相对**数字方向（6=朝对手；角色朝左时屏幕方向自动水平翻转，`_flip_numpad_horizontal`），在 `InputHandler` 的 24 帧指令历史（`MOTION_HISTORY_FRAMES`，与 8 帧按钮取消缓冲分离）中做**子序列匹配**；同时命中多个指令时取匹配结束最晚者（输入意图最新）。
+
+| 指令 | 输入 | 默认招式(`special_attacks` 下标) | 备注 |
+| ---- | ---- | ---- | ---- |
+| QCF 236 | 下(2)→下前(3)→前(6) | [0] 气拳 | 原有 |
+| QCB 214 | 下(2)→下后(1)→后(4) | [1] 崩拳 | 高击退 |
+| DP 623 | 前(6)→下(2)→下前(3) | [2] 升龙拳 | 对空升龙, `causes_knockdown` 击飞倒地 |
+
+- **触发键**：指令 + A/B/C 任一攻击键（招式由指令区分，不由按键区分）；指令不成立退化为通常技；乱序/滑出窗口(>24帧)不识别。
+- **起手与取消**均可触发（取消过第一段触发帧后，`_check_cancel_input`）；成功后 `clear_motion_history` **消耗**指令历史，防止同一次输入重复触发。
+- 默认招式数据在 `Fighter._setup_default_attacks()` 构建，角色差异化数据到位后直接覆盖 `special_attacks` 数组即可（必杀技数据由用户自行管理）。
+- 升龙拳命中站地上的对手走 `KNOCKDOWN → LIEDOWN → 受身/起身` 全链：`_process_knockdown` 有 2 帧保护且上升中(`velocity.y < 0`)不判落地——否则起跳当帧 `is_on_floor()` 的旧值 `true` 会把击飞升空误判为已落地，直接跳进躺地。
 
 ## 按键映射
 

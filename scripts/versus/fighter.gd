@@ -65,9 +65,13 @@ var advance_velocity := Vector2.ZERO
 # 朝向相对(以对手方向为前)的指令序列, 用于识别必杀技输入:
 #   正半圈 QCF = 下(2) -> 下前(3) -> 前(6) = 236
 #   反半圈 QCB = 下(2) -> 下后(1) -> 后(4) = 214
+#   升龙   DP  = 前(6) -> 下(2) -> 下前(3) = 623
 # 无论角色朝左朝右, 6 始终表示"朝对手方向"。
 const MOTION_QCF := [2, 3, 6]
 const MOTION_QCB := [2, 1, 4]
+const MOTION_DP := [6, 2, 3]
+# 指令 -> special_attacks 下标(顺序即默认优先级; 同时命中多个指令时取匹配结束最晚者=最新意图)
+const SPECIAL_MOTIONS := [MOTION_QCF, MOTION_QCB, MOTION_DP]
 
 # 允许被动回气的"自由/中立"状态(受击、攻击、倒地等不回气)
 const METER_REGEN_STATES := [
@@ -236,6 +240,55 @@ func _setup_default_attacks() -> void:
 	s_spec.active_duration = 4
 	atk_special.segments = [s_spec]
 	special_attacks.append(atk_special)
+
+	# ============ 必杀技·崩拳: 指令 QCB(214) + A/B/C ============
+	#   默认数据(角色差异化数据到位后直接覆盖 special_attacks[1] 即可):
+	#   近距离重拳, 高击退, 站/蹲均可防御
+	var atk_qcb := AttackData.new()
+	atk_qcb.attack_name = "崩拳"
+	atk_qcb.attack_type = AttackData.AttackType.SPECIAL
+	atk_qcb.attack_level = 4
+	atk_qcb.meter_gain = 12
+	atk_qcb.meter_cost = 0
+	var s_qcb := AttackData.Segment.new()
+	s_qcb.defense_property = AttackData.DefenseProperty.FULL_BLOCK
+	s_qcb.attack_attributes = AttackData.AttackAttribute.CHEST
+	s_qcb.damage = 90
+	s_qcb.hit_stun = 20
+	s_qcb.block_stun = 12
+	s_qcb.knockback_x = 340.0
+	s_qcb.hitbox_offset = Vector2(75, -45)
+	s_qcb.hitbox_size = Vector2(150, 75)
+	s_qcb.trigger_frame = 8
+	s_qcb.active_duration = 5
+	atk_qcb.segments = [s_qcb]
+	special_attacks.append(atk_qcb)
+
+	# ============ 必杀技·升龙拳: 指令 DP(623) + A/B/C ============
+	#   默认数据(角色差异化数据到位后直接覆盖 special_attacks[2] 即可):
+	#   对空升龙: 判定框高且偏上, 命中强制倒地击飞(走 KNOCKDOWN -> LIEDOWN ->
+	#   受身/起身 流程, 可被追地); 击飞纵向速度会被 JUMP_VELOCITY 封顶
+	var atk_dp := AttackData.new()
+	atk_dp.attack_name = "升龙拳"
+	atk_dp.attack_type = AttackData.AttackType.SPECIAL
+	atk_dp.attack_level = 4
+	atk_dp.meter_gain = 12
+	atk_dp.meter_cost = 0
+	var s_dp := AttackData.Segment.new()
+	s_dp.defense_property = AttackData.DefenseProperty.FULL_BLOCK
+	s_dp.attack_attributes = AttackData.AttackAttribute.CHEST
+	s_dp.damage = 110
+	s_dp.hit_stun = 20
+	s_dp.block_stun = 14
+	s_dp.knockback_x = 160.0
+	s_dp.knockback_y = -520.0   # 向上击飞(负=上), 倒地分支按 JUMP_VELOCITY 封顶
+	s_dp.causes_knockdown = true
+	s_dp.hitbox_offset = Vector2(55, -95)
+	s_dp.hitbox_size = Vector2(95, 150)
+	s_dp.trigger_frame = 7
+	s_dp.active_duration = 6
+	atk_dp.segments = [s_dp]
+	special_attacks.append(atk_dp)
 
 	# ============ 抓取段(D 键): 需要被拆投(防御属性) + 抓取属性 ============
 	_grab_move_segment = AttackData.Segment.new()
@@ -634,24 +687,33 @@ static func _flip_numpad_horizontal(d: int) -> int:
 			return d   # 2/5/8 无横向分量, 不变
 
 
-# 子序列判定: needle 是否作为子序列出现在 hay 中(用于指令识别)
-static func _is_subsequence(hay: Array, needle: Array) -> bool:
+# 指令匹配: 朝向相对指令是否作为子序列出现在最近指令历史中,
+#   返回匹配结束位置(历史下标), 未匹配返回 -1。
+#   取"结束位置"而非布尔: 同一历史可能同时命中多个指令(如 236 后接 623),
+#   结束越晚=输入意图越新, 由调用方择优。
+func _history_motion_end(steps: Array) -> int:
+	var dirs := InputHandler.get_motion_dirs(player_id)
 	var i := 0
-	for x in hay:
-		if x == needle[i]:
+	for idx in dirs.size():
+		var d: int = dirs[idx]
+		var rel := _flip_numpad_horizontal(d) if not facing_right else d
+		if rel == steps[i]:
 			i += 1
-			if i >= needle.size():
-				return true
-	return false
+			if i >= steps.size():
+				return idx
+	return -1
 
 
-# 检测朝向相对指令是否在最近输入历史中出现(作为子序列)
-func _history_has_motion(steps: Array) -> bool:
-	var dirs := InputHandler.get_history_dirs(player_id)
-	var rel: Array = []
-	for d in dirs:
-		rel.append(_flip_numpad_horizontal(d) if not facing_right else d)
-	return _is_subsequence(rel, steps)
+# 识别指令并返回对应必杀技索引(special_attacks 下标); 未识别返回 -1
+func _recognized_special_index() -> int:
+	var best_index := -1
+	var best_end := -1
+	for i in SPECIAL_MOTIONS.size():
+		var end := _history_motion_end(SPECIAL_MOTIONS[i])
+		if end > best_end:
+			best_end = end
+			best_index = i
+	return best_index
 
 
 # 升级时的视觉提示(Sprite 轻微放大脉冲 + 调试标签)
@@ -733,7 +795,12 @@ func _process_knockdown() -> void:
 	velocity.x = lerp(velocity.x, 0.0, 0.1)
 
 	# 击飞滑行结束(落地) -> 进入躺地, 等待受身/起身输入
-	if _is_grounded():
+	#   两道保护, 缺一不可:
+	#   1) velocity.y < 0(击飞上升中): 不判落地——升空是倒地演出的必要过程;
+	#   2) state_time >= 2: 起跳当帧 is_on_floor() 还是 hit 前的旧值(true),
+	#      若当帧就判"已落地"会直接进躺地, 击飞升空被整个跳过(命中站地上对手时),
+	#      且命中信号若延迟到帧末, 下一帧的 move_and_slide 才能以击飞速度刷新地面标志。
+	if velocity.y >= 0.0 and state_time >= 2 and _is_grounded():
 		velocity.x = 0
 		_change_state(FighterState.State.LIEDOWN)
 
@@ -908,11 +975,15 @@ func _handle_attack_input(airborne := false) -> void:
 		_attempt_parry()
 		return
 
-	# 必杀技(Special Move): 仅由指令输入(半圈 QCF)触发, 不提供组合键快捷施放
-	#   半圈 QCF(236) + 轻击(A) = 必杀技·气拳(不耗气)
-	#   指令不成立时退化为通常技(轻)
-	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) and _history_has_motion(MOTION_QCF):
-		if _try_start_special():
+	# 必杀技(Special Move): 仅由指令输入触发, 不提供组合键快捷施放
+	#   指令与招式一一对应(默认数据, 角色可覆盖 special_attacks):
+	#     236 QCF + A/B/C = 必杀技·气拳
+	#     214 QCB + A/B/C = 必杀技·崩拳
+	#     623 DP  + A/B/C = 必杀技·升龙拳(强制倒地击飞)
+	#   指令不成立时退化为通常技; 成功后清除指令历史(消耗, 防重复触发)
+	if _any_attack_button_just_pressed():
+		var mi := _recognized_special_index()
+		if mi >= 0 and _try_start_special(mi):
 			return
 
 	# 通常技(Normal): 直接按攻击键(站 / 蹲 / 跳中均为此类)
@@ -930,15 +1001,22 @@ func _handle_attack_input(airborne := false) -> void:
 
 
 func _check_cancel_input() -> void:
-	# 取消链: 通常技(轻/中/重) -> 必杀技·气拳(QCF+A, 链尾)
-	#   取消时检测指令输入(半圈 QCF) + 轻击, 不依赖组合键(A+B/B+C 已改为抓取/格挡技)
+	# 取消链: 通常技(轻/中/重) -> 必杀技(236/214/623 + A/B/C, 链尾)
+	#   取消时同样走指令识别(不依赖组合键: A+B/B+C 已改为抓取/格挡技)
 	#   仅地面可取消进必杀(空中必杀暂不支持)
 	if current_attack and current_attack.cancel_to_special \
 			and _is_grounded() \
-			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) \
-			and _history_has_motion(MOTION_QCF):
-		if _try_start_special():
+			and _any_attack_button_just_pressed():
+		var mi := _recognized_special_index()
+		if mi >= 0 and _try_start_special(mi):
 			return
+
+
+# A/B/C 任一攻击键刚按下(必杀技指令的触发键: 轻/中/重均可, 由指令区分招式)
+func _any_attack_button_just_pressed() -> bool:
+	return InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) \
+		or InputHandler.is_just_pressed(player_id, InputHandler.InputButton.B) \
+		or InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C)
 
 
 # ============ 攻击系统 ============
@@ -989,12 +1067,14 @@ func _combo_pressed(x: int, y: int) -> bool:
 		or (InputHandler.is_just_pressed(player_id, y) and InputHandler.is_pressed(player_id, x))
 
 
-# 起手/取消 必杀技·气拳: 由指令输入(半圈 QCF + 轻击)触发, 不消耗气
-#   指令检测在调用处完成, 此函数只负责起手与防止空数组
-func _try_start_special() -> bool:
-	if special_attacks.is_empty():
+# 起手/取消 必杀技: 由指令输入(236/214/623 + A/B/C)触发, 不消耗气
+#   指令检测与招式选择在调用处完成(_recognized_special_index), 此函数只负责起手/防越界/消耗指令
+func _try_start_special(motion_index: int) -> bool:
+	if motion_index < 0 or motion_index >= special_attacks.size():
 		return false
-	_start_attack(FighterState.State.ATTACK_SPECIAL, special_attacks[0] if special_attacks.size() > 0 else null)
+	_start_attack(FighterState.State.ATTACK_SPECIAL, special_attacks[motion_index])
+	# 消耗指令历史: 否则同一次输入在窗口内会重复触发(如取消连按两下出两个必杀)
+	InputHandler.clear_motion_history(player_id)
 	return true
 
 
