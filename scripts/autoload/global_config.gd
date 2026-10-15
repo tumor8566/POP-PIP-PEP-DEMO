@@ -19,6 +19,7 @@ const MAX_METER := 100           # 最大气槽 (100 P)
 const WALK_SPEED := 400.0
 const DASH_SPEED := 1000.0
 const DASH_DURATION := 0.15
+const DASH_BUFFER_FRAMES := 15      # 双击冲刺识别窗口(帧): 窗口内第二次同方向=冲刺
 const JUMP_VELOCITY := -500.0
 const GRAVITY := 1200.0
 const MAX_FALL_SPEED := 800.0
@@ -120,6 +121,23 @@ const SOUR_SHAKE_MULT := 0.5                # 酸点震屏折扣
 #   追地攻击不产生虚血(灰色血量)。
 const PURSUIT_SOFT_KNOCKDOWN_FRAMES := 90   # 追地命中后对手软倒地持续帧(90f = 1.5S)
 const PURSUIT_POSITION_SHIFT := 26.0        # 追地命中时把对手位置推开/拉近的距离
+
+# 倒地/受身/起身 (KNOCKDOWN -> LIEDOWN -> [TECH | WAKEUP])
+#   受身: 被击倒的瞬间(KNOCKDOWN 落地后的受身窗口内)按方向, 朝方向翻滚, 全程无敌
+#   起身: 倒地躺地阶段按方向, 决定起身位移方向(前/后/原地); 不按则超时自动原地起身
+const TECH_WINDOW_FRAMES := 12          # 受身输入窗口(倒地瞬间, 设计值可调)
+const TECH_INVINCIBLE_FRAMES := 16      # 受身翻滚无敌帧(设计值可调)
+const TECH_SPEED := 260.0               # 受身翻滚速度 px/s(设计值可调)
+const TECH_DURATION := 18               # 受身翻滚持续帧(设计值可调)
+const LIEDOWN_AUTO_WAKEUP_FRAMES := 30  # 躺地超时自动起身帧(设计值可调)
+const WAKEUP_FORWARD_DIST := 50.0       # 向前起身位移(设计值可调)
+const WAKEUP_BACKWARD_DIST := 50.0      # 向后起身位移(设计值可调)
+const WAKEUP_FRAMES := 20               # 原地起身帧数
+const WAKEUP_DIR_FRAMES := 26           # 带方向起身帧数(略慢于原地, 设计值可调)
+
+# 空中通常技(JA/JB/JC)默认帧数据修正(借地面版数据微调, 待角色数据细化)
+const AIR_ATTACK_TRIGGER_DELAY := 1     # 空中攻击出招帧增量
+const AIR_ATTACK_SIZE_MULT := 0.8       # 空中攻击判定框缩小倍率
 
 # ===== 相杀 (CRASH) =====
 #   双方攻击判定框重叠时(且双方均未受击), 双方产生 10% 的停帧,

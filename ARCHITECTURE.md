@@ -31,7 +31,7 @@ FightingGame/
 │   │   └── character_select.gd # 选人逻辑: 双人独立操作
 │   ├── versus/
 │   │   ├── fighter.gd         # ★核心: 格斗角色控制器
-│   │   ├── fighter_state.gd   # 状态枚举: 25种格斗状态
+│   │   ├── fighter_state.gd   # 状态枚举: 28种格斗状态
 │   │   ├── attack_data.gd     # 攻击数据资源: 伤害/帧数/判定
 │   │   ├── hitbox.gd          # 攻击判定框
 │   │   ├── hurtbox.gd         # 受击判定框
@@ -52,13 +52,13 @@ FightingGame/
 
 ### 1. 状态机 (FighterState)
 
-角色共有 **22种状态**，按类别分为:
+角色共有 **28种状态**，按类别分为:
 
 - **移动类**: IDLE / WALK_FORWARD / WALK_BACK / DASH_FORWARD / DASH_BACK / CROUCH
 - **跳跃类**: JUMP_UP / JUMP_FORWARD / JUMP_BACK
 - **防御类**: STAND_BLOCK / CROUCH_BLOCK
 - **攻击类**: ATTACK_LIGHT / ATTACK_MEDIUM / ATTACK_HEAVY / ATTACK_SPECIAL / GRAB
-- **受击类**: HIT_STUN / GRABBED / KNOCKDOWN / SOFT_KNOCKDOWN / WAKEUP
+- **受击类**: HIT_STUN / GRABBED / KNOCKDOWN / LIEDOWN / TECH / SOFT_KNOCKDOWN / WAKEUP
 - **系统类**: ESCAPE (脱离) / CRASHED (相杀)
 - **演出类**: INTRO / VICTORY / DEFEATED
 
@@ -97,6 +97,43 @@ FightingGame/
 - **纵向拟合**：只要未进入受击方优先模式（含**攻击方在地面、受击方在空中**的受击情况——此时扩放框住双方，不冻结），若有人跳高出画面上边界，继续压缩放框住双方视觉包围盒（同一 0.9 下限；镜头允许高出舞台顶部，底部不露舞台底）。
 - **受击方优先**：双方均离地且恰好一方受击 → 中心钉受击方、缩放冻结；攻击方移动出画面不触发任何扩放。
 - **画面边框限制**：已最大扩放且双方间距超过帧宽时，把双方钳制在 **帧边缘∩墙边界**（取更严者）。用目标帧（非平滑帧）判定，不会截断冲刺；只钳位置不改速度。
+
+### 7. 倒地/受身/起身系统 (Knockdown → LIEDOWN → TECH/WAKEUP)
+
+击飞命中（`causes_knockdown`）走完整倒地流程；软倒地（被追地命中）保持短硬直后自行起身，**不进入受身流程**。
+
+```
+KNOCKDOWN(击飞滑行) --落地--> LIEDOWN(躺地)
+                                |
+  受身窗口 12 帧内按方向 --------> TECH(受身: 朝方向翻滚 260px/s, 全程无敌 16 帧, 18 帧后回中立)
+                                |
+  窗口外按方向 ------------------> WAKEUP(带方向起身: 前/后各位移 50px, 26 帧)
+                                |
+  躺地 30 帧无输入 --------------> WAKEUP(原地起身, 20 帧)
+```
+
+- 方向均以**面朝对手为前**（`_direction_toward_opponent()`）：前/后受身与起身速度/位移按此换算；下方向键等同"有输入"（原地受身/起身）。
+- 受身无敌帧在 `_on_hit`/`_begin_grabbed` 入口统一拦截（`invincible_frames > 0` 直接 return），落地/起身清零。
+- 全部数值在 `global_config.gd` 的 `TECH_*`/`LIEDOWN_AUTO_WAKEUP_FRAMES`/`WAKEUP_*` 常量中，标注"设计值可调"。
+
+### 8. 空中通常技 (JA/JB/JC)
+
+- 空中**仅 A/B/C（轻/中/重）有效**，D（抓取）/E（格挡）及必杀指令在空中被忽略（`_handle_attack_input(airborne := true)` 分支）。
+- 招式数据默认由地面同键位攻击**深拷贝微调**生成（`air_*_attacks` 数组，角色差异化数据到位后直接覆盖即可）：
+  - 出招帧 +1（`AIR_ATTACK_TRIGGER_DELAY`），判定框纵向 ×0.8（`AIR_ATTACK_SIZE_MULT`）；
+  - 伤害/击退/硬直等沿用地面版，起跳惯性保留（空中攻击不清零速度）。
+- 深拷贝必须显式处理段数组：`Segment` 是 RefCounted，`Resource.duplicate(true)` **不会**带上 `segments`，且共享段对象会让空中微调污染地面版数据；故用 `AttackData.Segment.duplicate_segment()` 逐段拷贝后整体赋值（见 `attack_data.gd` 与 `fighter.gd` 的空中攻击构建段）。
+
+### 9. 冲刺 (Dash) 双击识别
+
+- 双击识别（`_check_dash_input`）**先于行走判定**执行（`_handle_universal_input` 内顺序保证），避免单击后误入行走导致双击丢识别。
+- `buffer_timer` 每次按方向置 `DASH_BUFFER_FRAMES`（15 帧）并逐帧递减：窗口内第二次同方向 = 冲刺；窗口过期后重新单击 = 正常行走（冒烟测试覆盖：单击行走/缓冲过期不冲/双击前后冲刺）。
+
+### 10. 判定框生命周期注意事项 (Hitbox)
+
+- `Hitbox.deactivate()` 失效时会把碰撞形状挪到远处（`shape_node.position = (100000, 0)`），而非仅置 `monitoring = false`：Area2D 监视是单向持续注册的，形状留在原处会让对方受击框保持"已进入"而不产生退出事件，导致下次激活恢复几何时**不再触发 `area_entered`，命中被静默漏掉**（第二段及以后全部丢判定）。
+- 不要用 `CollisionShape2D.disabled` 切换（运行时重新启用不会与已有监视者重配）或 `monitorable` 切换（物理服务器重配监视对有延迟，进入信号会晚于判定框失效到达，同样漏命中）。
+- 角色 `.tscn` 中的判定框/受击框形状子资源必须 `resource_local_to_scene = true`：否则多实例共享同一 `RectangleShape2D`，`_apply_segment()` 改写 `extents` 会互相污染。
 
 ## 按键映射
 

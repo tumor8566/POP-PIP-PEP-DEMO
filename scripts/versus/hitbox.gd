@@ -75,6 +75,15 @@ func _probe_overlaps() -> void:
 
 func deactivate() -> void:
 	monitoring = false
+	# 把碰撞形状挪到远处: 判定框与对方受击框的监视配对是持续注册的,
+	#   若失效后形状留在原处, 对方会一直保持"已进入"状态不产生退出事件,
+	#   导致下次激活恢复几何时不再触发 area_entered, 命中判定被漏掉。
+	#   挪走形状让配对真正"退出", 激活时 _apply_segment 恢复几何即可重新"进入"。
+	#   (不要切换 monitorable: 物理服务器重配监视配对有延迟, 进入信号会晚于
+	#    判定框失效到达, 同样漏命中; 也不要禁用形状: 运行时重新启用不会重配。)
+	var shape_node := get_node_or_null("HitboxCollision") as CollisionShape2D
+	if shape_node:
+		shape_node.position = Vector2(100000.0, 0.0)
 	current_segment = null
 	hit_targets.clear()
 	last_spot = Spot.NONE

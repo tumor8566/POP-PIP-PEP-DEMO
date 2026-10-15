@@ -86,6 +86,9 @@ class Segment extends RefCounted:
 	var knockback_x: float = 200.0
 	var knockback_y: float = 0.0
 	var juggle: bool = false
+	# 强制倒地: 命中后对手进入 KNOCKDOWN(击飞倒地, 可受身/起身), 而非普通受击硬直
+	#   默认 false(不改变现有手感); "3C 强制倒地"类招式数据到位时打开, 机制无需再改
+	var causes_knockdown: bool = false
 
 	var hitbox_offset: Vector2 = Vector2(40, 0)
 	var hitbox_size: Vector2 = Vector2(60, 40)
@@ -103,6 +106,31 @@ class Segment extends RefCounted:
 
 	func has_attribute(attr: int) -> bool:
 		return (attack_attributes & attr) != 0
+
+
+	# 显式深拷贝一段:
+	#   Segment 是 RefCounted(非 Resource), 不参与 Resource.duplicate(true) 的
+	#   深拷贝流程(实测含 RefCounted 段的数组会被丢弃), 故手动逐字段拷贝,
+	#   保证空中版/衍生招式拥有独立的段数据(改互不影响)。
+	func duplicate_segment() -> Segment:
+		var s := Segment.new()
+		s.defense_property = defense_property
+		s.attack_attributes = attack_attributes
+		s.damage = damage
+		s.hit_stun = hit_stun
+		s.block_stun = block_stun
+		s.chip_damage = chip_damage
+		s.knockback_x = knockback_x
+		s.knockback_y = knockback_y
+		s.juggle = juggle
+		s.causes_knockdown = causes_knockdown
+		s.hitbox_offset = hitbox_offset
+		s.hitbox_size = hitbox_size
+		s.sweet_spot = sweet_spot
+		s.sour_spot = sour_spot
+		s.trigger_frame = trigger_frame
+		s.active_duration = active_duration
+		return s
 
 
 	# 判断命中点(相对判定框 0~1 归一化坐标)是否落在甜点/酸点区域

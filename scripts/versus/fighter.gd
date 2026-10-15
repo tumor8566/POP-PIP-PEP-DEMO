@@ -94,6 +94,10 @@ var _grab_move_segment: AttackData.Segment = null  # D 键抓取动作使用的�
 var _hit_stun_remaining := 0    # 本次受击的有效硬直帧(已按攻击方等级缩放)
 var block_stun_timer := 0       # 防御硬直锁定帧(防御中受击后短暂无法脱离防御, 同时是"脱离"的触发窗口)
 var _wall_jumps_used := 0       # 本次离地已使用的蹬墙跳次数(每次离地限一次, 落地/回中立重置)
+
+# ===== 受身/起身 (TECH / WAKEUP) =====
+var invincible_frames := 0      # 受击无敌剩余帧(受身翻滚期间)
+var _wakeup_dir := 0            # 起身位移方向: -1=向后, 0=原地, +1=向前(以面朝对手为前)
 var _active_seg_index := -1  # 当前攻击正在激活的段索引(用于在切换段时重新配置 hitbox)
 
 # ===== 虚血 (RECOVERABLE LIFE) =====
@@ -114,6 +118,10 @@ var light_attacks: Array = []
 var medium_attacks: Array = []
 var heavy_attacks: Array = []
 var special_attacks: Array = []
+# 空中通常技(JA/JB/JC): 与地面版并列, 供角色差异化
+var air_light_attacks: Array = []
+var air_medium_attacks: Array = []
+var air_heavy_attacks: Array = []
 
 # 节点引用
 @onready var sprite: Sprite2D = $Sprite
@@ -241,6 +249,24 @@ func _setup_default_attacks() -> void:
 	_grab_move_segment.trigger_frame = 0
 	_grab_move_segment.active_duration = 3
 
+	# ============ 空中通常技(JA/JB/JC) ============
+	#   默认借地面同键位数据微调: 出招帧 +1(空中出招略慢), 判定框纵向 x0.8(略收);
+	#   伤害/击退/硬直等沿用地面版; 待角色差异化数据到位后直接覆盖下列数组即可。
+	#   段数据用 Segment.duplicate_segment() 显式深拷贝:
+	#     Segment 是 RefCounted, Resource.duplicate(true) 不会带上段数组,
+	#     且共享段对象会导致空中微调污染地面版数据。
+	for pair in [[light_attacks, air_light_attacks], [medium_attacks, air_medium_attacks], [heavy_attacks, air_heavy_attacks]]:
+		for base_atk in pair[0]:
+			var air_atk := (base_atk as AttackData).duplicate(true) as AttackData
+			var air_segs: Array = []
+			for base_seg in (base_atk as AttackData).segments:
+				var seg: AttackData.Segment = (base_seg as AttackData.Segment).duplicate_segment()
+				seg.trigger_frame += GlobalConfig.AIR_ATTACK_TRIGGER_DELAY
+				seg.hitbox_size.y *= GlobalConfig.AIR_ATTACK_SIZE_MULT
+				air_segs.append(seg)
+			air_atk.segments = air_segs
+			pair[1].append(air_atk)
+
 
 func _physics_process(_delta: float) -> void:
 	# 命中定格: 受击/攻击命中瞬间短暂冻结双方, 强化打击冲击感
@@ -249,7 +275,13 @@ func _physics_process(_delta: float) -> void:
 		return
 
 	state_time += 1
-	
+
+	# 双击冲刺窗口递减(15 帧内第二次同方向才识别为冲刺)
+	if buffer_timer > 0:
+		buffer_timer -= 1
+	# 受身无敌帧递减
+	if invincible_frames > 0:
+		invincible_frames -= 1
 	# 方向+F: 动作中=推进(POP IMPETUS), 防御硬直中=脱离(ESCAPE)
 	_try_f_boost()
 	
@@ -284,6 +316,10 @@ func _physics_process(_delta: float) -> void:
 			_process_escape()
 		FighterState.State.KNOCKDOWN:
 			_process_knockdown()
+		FighterState.State.LIEDOWN:
+			_process_liedown()
+		FighterState.State.TECH:
+			_process_tech()
 		FighterState.State.SOFT_KNOCKDOWN:
 			_process_soft_knockdown()
 		FighterState.State.CRASHED:
@@ -417,6 +453,8 @@ func _process_jump() -> void:
 	# 蹬墙跳: 空中贴墙按跳跃键, 朝墙外弹出(每次离地限一次)
 	if _try_wall_jump():
 		return
+	# 空中通常技(JA/JB/JC)
+	_handle_attack_input(true)
 	# 空中保留起跳时的横向惯性(斜跳/冲跳惯性), 不再按输入每帧覆盖速度
 	if _is_grounded() and state_time > 5:
 		_wall_jumps_used = 0
@@ -647,7 +685,9 @@ func _update_debug_label() -> void:
 
 func _process_attack() -> void:
 	attack_frame += 1
-	velocity.x = 0
+	# 地面攻击: 出招即钉住横向(脚不着地的位移); 空中攻击保留惯性(空中攻击不刹车)
+	if _is_grounded():
+		velocity.x = 0
 	if not current_attack or current_attack.segments.is_empty():
 		hitbox.deactivate()
 		_end_attack()
@@ -691,14 +731,77 @@ func _process_hit_stun() -> void:
 
 func _process_knockdown() -> void:
 	velocity.x = lerp(velocity.x, 0.0, 0.1)
-	
-	if _is_grounded() and state_time > 30:
+
+	# 击飞滑行结束(落地) -> 进入躺地, 等待受身/起身输入
+	if _is_grounded():
+		velocity.x = 0
+		_change_state(FighterState.State.LIEDOWN)
+
+
+# 躺地: 受身窗口内按方向 = 受身; 之后按方向 = 对应方向起身; 超时自动原地起身
+func _process_liedown() -> void:
+	velocity.x = 0
+	var h := InputHandler.get_horizontal(player_id)
+	var pressed := h != 0 or InputHandler.is_pressed(player_id, InputHandler.InputButton.DOWN)
+
+	# 受身窗口(被击倒的瞬间): 前/后/原地 受身
+	if state_time <= GlobalConfig.TECH_WINDOW_FRAMES and pressed:
+		var toward := _direction_toward_opponent()
+		var dir := 0   # -1=后, 0=原地, +1=前(以面朝对手为前)
+		if h == toward:
+			dir = 1
+		elif h != 0:
+			dir = -1
+		_start_tech(dir)
+		return
+
+	# 躺地阶段: 按方向决定起身方式(受身窗口已过)
+	if pressed and state_time > GlobalConfig.TECH_WINDOW_FRAMES:
+		var toward2 := _direction_toward_opponent()
+		if h == toward2:
+			_wakeup_dir = 1
+		elif h != 0:
+			_wakeup_dir = -1
+		else:
+			_wakeup_dir = 0
 		_change_state(FighterState.State.WAKEUP)
+		return
+
+	# 超时自动原地起身
+	if state_time >= GlobalConfig.LIEDOWN_AUTO_WAKEUP_FRAMES:
+		_wakeup_dir = 0
+		_change_state(FighterState.State.WAKEUP)
+
+
+# 受身(TECH): 朝方向翻滚, 全程无敌; 结束回中立(空中则回跳跃)
+func _start_tech(dir: int) -> void:
+	_wakeup_dir = dir
+	var toward := _direction_toward_opponent()
+	velocity.x = GlobalConfig.TECH_SPEED * dir * toward
+	invincible_frames = GlobalConfig.TECH_INVINCIBLE_FRAMES
+	_change_state(FighterState.State.TECH)
+
+
+func _process_tech() -> void:
+	velocity.x = lerp(velocity.x, 0.0, 0.15)
+	if state_time >= GlobalConfig.TECH_DURATION:
+		if _is_grounded():
+			_change_state(FighterState.State.IDLE)
+		else:
+			_change_state(FighterState.State.JUMP_UP)
 
 
 func _process_wakeup() -> void:
 	velocity.x = 0
-	if state_time > 20:
+	# 方向起身: 前/后各位移一段(原地不动); 帧数略长于原地起身
+	var frames := GlobalConfig.WAKEUP_DIR_FRAMES if _wakeup_dir != 0 else GlobalConfig.WAKEUP_FRAMES
+	if _wakeup_dir != 0 and state_time <= frames:
+		var toward := _direction_toward_opponent()
+		var dist := GlobalConfig.WAKEUP_FORWARD_DIST if _wakeup_dir > 0 else GlobalConfig.WAKEUP_BACKWARD_DIST
+		# 位移在起身期间均匀推进(总位移 dist)
+		global_position.x += dist / frames * _wakeup_dir * toward
+	if state_time >= frames:
+		_wakeup_dir = 0
 		_change_state(FighterState.State.IDLE)
 
 
@@ -754,7 +857,12 @@ func _handle_universal_input() -> void:
 	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.UP):
 		_do_jump()
 		return
-	
+
+	# 冲刺(双击方向): 必须先于行走判定(否则按住方向直接进行走分支, 双击永远识别不到)
+	_check_dash_input()
+	if current_state in [FighterState.State.DASH_FORWARD, FighterState.State.DASH_BACK]:
+		return
+
 	# 下蹲
 	if InputHandler.is_pressed(player_id, InputHandler.InputButton.DOWN):
 		_change_state(FighterState.State.CROUCH)
@@ -770,24 +878,27 @@ func _handle_universal_input() -> void:
 		else:
 			_change_state(FighterState.State.WALK_BACK)
 		return
-	
-	# 冲刺
-	if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.RIGHT):
-		var toward := _direction_toward_opponent()
-		if InputHandler.is_pressed(player_id, InputHandler.InputButton.RIGHT) and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.RIGHT):
-			pass  # 双击冲刺逻辑
-	# 简化冲刺: 快速推两次方向
-	_check_dash_input()
-	
+
 	# 站防
 	if _check_block(FighterState.State.STAND_BLOCK):
 		return
-	
+
 	# 攻击
 	_handle_attack_input()
 
 
-func _handle_attack_input() -> void:
+func _handle_attack_input(airborne := false) -> void:
+	# 空中(JA/JB/JC): 仅 A/B/C 空中通常技; 抓取/格挡/必杀指令在空中不成立
+	#   (JD 空中抓取/JE 空中格挡为后续内容; 空中必杀暂不支持, 退化为通常技)
+	if airborne:
+		if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A):
+			_start_attack(FighterState.State.ATTACK_LIGHT, air_light_attacks[0] if air_light_attacks.size() > 0 else null)
+		elif InputHandler.is_just_pressed(player_id, InputHandler.InputButton.B):
+			_start_attack(FighterState.State.ATTACK_MEDIUM, air_medium_attacks[0] if air_medium_attacks.size() > 0 else null)
+		elif InputHandler.is_just_pressed(player_id, InputHandler.InputButton.C):
+			_start_attack(FighterState.State.ATTACK_HEAVY, air_heavy_attacks[0] if air_heavy_attacks.size() > 0 else null)
+		return
+
 	# 抓取组合键: A + B (等同于单按 D 抓取)
 	if _combo_pressed(InputHandler.InputButton.A, InputHandler.InputButton.B):
 		_attempt_grab()
@@ -821,7 +932,9 @@ func _handle_attack_input() -> void:
 func _check_cancel_input() -> void:
 	# 取消链: 通常技(轻/中/重) -> 必杀技·气拳(QCF+A, 链尾)
 	#   取消时检测指令输入(半圈 QCF) + 轻击, 不依赖组合键(A+B/B+C 已改为抓取/格挡技)
+	#   仅地面可取消进必杀(空中必杀暂不支持)
 	if current_attack and current_attack.cancel_to_special \
+			and _is_grounded() \
 			and InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A) \
 			and _history_has_motion(MOTION_QCF):
 		if _try_start_special():
@@ -900,6 +1013,8 @@ func _attempt_grab() -> void:
 # 被抓取: 开启拆投窗口；seg 为抓取段(抓取成立时按其伤害/击退结算)
 func _begin_grabbed(attacker: Fighter, seg = null) -> bool:
 	if is_being_grabbed or not _is_grounded():
+		return false
+	if invincible_frames > 0:   # 受身无敌中不可被抓取
 		return false
 	is_being_grabbed = true
 	_grab_attacker = attacker
@@ -990,6 +1105,9 @@ func _check_block(block_state: int) -> bool:
 func _on_hit(source_hitbox: Area2D, hurtbox = null) -> void:
 	if not is_instance_valid(source_hitbox):
 		return
+	# 受击无敌(受身翻滚中): 不可被再命中/被抓取
+	if invincible_frames > 0:
+		return
 
 	var seg: AttackData.Segment = source_hitbox.current_segment
 	if not seg:
@@ -1048,6 +1166,18 @@ func _on_hit(source_hitbox: Area2D, hurtbox = null) -> void:
 	velocity.x = seg.knockback_x * kb_dir
 	velocity.y = seg.knockback_y
 
+	# 强制倒地(causes_knockdown, 如 3C 类招式): 不进受击硬直, 直接击飞倒地
+	#   倒地后走 KNOCKDOWN -> LIEDOWN -> 受身/起身 流程
+	#   默认所有段 false(不改变现有手感); 招式数据到位时逐段打开
+	if seg.causes_knockdown:
+		hitbox.deactivate()
+		current_attack = null
+		attack_frame = 0
+		velocity.y = minf(seg.knockback_y, GlobalConfig.JUMP_VELOCITY)
+		_change_state(FighterState.State.KNOCKDOWN)
+		emit_signal("hit_landed", self, attacker, seg, false, spot)
+		return
+
 	# 通知对战场景触发打击反馈(命中定格/火花/震动/音效/连击)
 	emit_signal("hit_landed", self, attacker, seg, false, spot)
 
@@ -1086,6 +1216,7 @@ func _apply_pursuit_hit(seg: AttackData.Segment, attack: AttackData, attacker: F
 func _process_soft_knockdown() -> void:
 	velocity.x = lerp(velocity.x, 0.0, 0.15)
 	if state_time >= GlobalConfig.PURSUIT_SOFT_KNOCKDOWN_FRAMES:
+		_wakeup_dir = 0   # 软倒地自行起身: 原地, 不走受身/方向起身
 		_change_state(FighterState.State.WAKEUP)
 
 
@@ -1196,6 +1327,8 @@ func reset_vitals() -> void:
 	gray_life = 0
 	_gray_life_timer = 0
 	_meter_regen_frames = 0
+	invincible_frames = 0
+	_wakeup_dir = 0
 	emit_signal("health_changed", health, GlobalConfig.MAX_HEALTH)
 	emit_signal("gray_life_changed", gray_life, GlobalConfig.MAX_HEALTH)
 
@@ -1279,7 +1412,7 @@ func _check_dash_input() -> void:
 			_change_state(FighterState.State.DASH_FORWARD)
 		elif buffer_timer > 0:
 			_change_state(FighterState.State.DASH_BACK)
-		buffer_timer = 15
+		buffer_timer = GlobalConfig.DASH_BUFFER_FRAMES
 
 
 # ============ 工具方法 ============
