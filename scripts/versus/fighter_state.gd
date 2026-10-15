@@ -18,7 +18,7 @@ enum State {
 	ATTACK_LIGHT,   # 轻攻击(通常技)
 	ATTACK_MEDIUM,  # 中攻击(通常技)
 	ATTACK_HEAVY,   # 重攻击(通常技)
-	ATTACK_SPECIAL, # 必杀技(气拳)
+	ATTACK_SPECIAL, # 必杀技(招式数据由用户自行管理)
 	GRAB,           # 抓取(D 键)
 	ESCAPE,         # 脱离(防御硬直中 方向+F 强制挣脱)
 	HIT_STUN,       # 受击硬直
@@ -61,7 +61,7 @@ const HIT_REACTION_STATES := [
 ]
 
 # 状态是否可取消(用于连招系统)
-# 取消链: 通常技(轻/中/重) -> 必杀技(气拳, 链尾)
+# 取消链: 通常技(轻/中/重) -> 必杀技(招式数据由用户管理, 链尾)
 const CANCELLABLE_STATES := [
 	State.ATTACK_LIGHT, State.ATTACK_MEDIUM, State.ATTACK_HEAVY, State.ATTACK_SPECIAL,
 ]

@@ -233,7 +233,7 @@ func _hitstop_frames_for(seg: AttackData.Segment, blocked: bool, spot: int = Hit
 		if dmg >= 200:
 			base = 12   # 必杀技
 		elif dmg >= 100:
-			base = 9    # 重击 / 必杀技(气拳)
+			base = 9    # 重击 / 必杀技
 		elif dmg >= 80:
 			base = 7    # 中击二段
 		else:

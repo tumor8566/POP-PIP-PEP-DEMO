@@ -154,7 +154,7 @@ func _setup_default_attacks() -> void:
 	atk_light.attack_type = AttackData.AttackType.LIGHT
 	atk_light.attack_level = 1
 	atk_light.meter_gain = 6
-	# 取消链: 轻/中/重 通常技可取消进必杀技·气拳(不再保留 轻->中->重)
+	# 取消链: 轻/中/重 通常技可取消进必杀技(指令+招式数据由角色/用户管理)
 	atk_light.cancel_to_special = true
 	var s_light := AttackData.Segment.new()
 	s_light.defense_property = AttackData.DefenseProperty.FULL_BLOCK
@@ -221,30 +221,11 @@ func _setup_default_attacks() -> void:
 	atk_heavy.segments = [s_heavy]
 	heavy_attacks.append(atk_heavy)
 
-	# ============ 必杀技·气拳: 1段，全段防御 + 对胸(气攻) ============
-	#   通常技命中后可取消进必杀技(指令 QCF + A); 气拳为当前取消链链尾(不耗气)
-	var atk_special := AttackData.new()
-	atk_special.attack_name = "气拳"
-	atk_special.attack_type = AttackData.AttackType.SPECIAL
-	atk_special.attack_level = 4
-	atk_special.meter_gain = 12
-	atk_special.meter_cost = 0
-	var s_spec := AttackData.Segment.new()
-	s_spec.defense_property = AttackData.DefenseProperty.FULL_BLOCK
-	s_spec.attack_attributes = AttackData.AttackAttribute.CHEST | AttackData.AttackAttribute.QI
-	s_spec.damage = 100
-	s_spec.knockback_x = 300.0
-	s_spec.hitbox_offset = Vector2(100, -40)
-	s_spec.hitbox_size = Vector2(180, 70)
-	s_spec.trigger_frame = 6
-	s_spec.active_duration = 4
-	atk_special.segments = [s_spec]
-	special_attacks.append(atk_special)
-
-	# ============ 其他必杀技数据由用户自行管理 ============
-	#   指令识别已就绪: SPECIAL_MOTIONS 中第 i 条指令命中时取 special_attacks[i];
-	#   向 special_attacks 追加自己的招式数据(下标 1/2/...)即可让 214/623 等指令生效,
-	#   本文件不预置任何默认必杀技数据(仅保留既有的气拳)。
+	# ============ 必杀技数据由用户自行管理 ============
+	#   每个角色的必杀技是不同的招式, 本模板不预置任何必杀技数据(special_attacks 保持为空);
+	#   指令识别已就绪: SPECIAL_MOTIONS 中第 i 条指令命中时取 special_attacks[i],
+	#   角色(或用户)向 special_attacks 追加自己的招式数据(下标 0/1/2/...)即使对应指令生效。
+	#   没有数据的指令不触发, 自然退化为通常技。
 
 	# ============ 抓取段(D 键): 需要被拆投(防御属性) + 抓取属性 ============
 	_grab_move_segment = AttackData.Segment.new()
@@ -935,7 +916,7 @@ func _handle_attack_input(airborne := false) -> void:
 		return
 
 	# 必杀技(Special Move): 仅由指令输入触发, 不提供组合键快捷施放
-	#   指令 -> special_attacks 下标(SPECIAL_MOTIONS 顺序): 236->[0](气拳) 等;
+	#   指令 -> special_attacks 下标(SPECIAL_MOTIONS 顺序): 236->[0], 214->[1], 623->[2];
 	#   招式数据由用户自行管理: 往 special_attacks 追加数据即使对应指令生效,
 	#   没有数据的指令不触发, 自然退化为通常技
 	#   触发键: A/B/C 任一(招式由指令区分, 不由按键区分); 成功后清除指令历史(消耗)
@@ -1010,7 +991,7 @@ func _end_attack() -> void:
 
 
 func _can_cancel() -> bool:
-	# 通常技与必杀技·气拳可被取消; 必杀技·气拳为当前取消链链尾
+	# 通常技可被取消进必杀技; 必杀技为当前取消链链尾
 	return current_state in [
 		FighterState.State.ATTACK_LIGHT,
 		FighterState.State.ATTACK_MEDIUM,
