@@ -1,8 +1,9 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/versus/versus_battle.gd" id="1_versus"]
 [ext_resource type="Script" path="res://scripts/versus/round_manager.gd" id="2_round"]
 [ext_resource type="Script" path="res://scripts/hud/battle_hud.gd" id="3_hud"]
+[ext_resource type="Script" path="res://scripts/versus/battle_camera.gd" id="4_cam"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor"]
 extents = Vector2(960, 150)
@@ -12,6 +13,7 @@ script = ExtResource("1_versus")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(960, 450)
+script = ExtResource("4_cam")
 
 [node name="Stage" type="Node2D" parent="."]
 

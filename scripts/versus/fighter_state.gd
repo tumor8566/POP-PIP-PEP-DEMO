@@ -53,6 +53,11 @@ const DOWN_STATES := [
 	State.KNOCKDOWN, State.SOFT_KNOCKDOWN, State.WAKEUP,
 ]
 
+# 属于"受击反应"的状态(摄像机受击方优先判定用; WAKEUP 是起身, 不算受击)
+const HIT_REACTION_STATES := [
+	State.HIT_STUN, State.KNOCKDOWN, State.SOFT_KNOCKDOWN,
+]
+
 # 状态是否可取消(用于连招系统)
 # 取消链: 通常技(轻/中/重) -> 必杀技(气拳, 链尾)
 const CANCELLABLE_STATES := [

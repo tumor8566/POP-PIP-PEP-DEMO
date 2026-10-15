@@ -34,12 +34,34 @@ const STAGE_HEIGHT := 900.0
 const GROUND_Y := 562.0            # 地面碰撞体上表面
 const FIGHTER_BOUND_MARGIN := 40.0 # 角色活动边界留白(半宽)
 
-# 摄像机(固定基准大小 + 轻微缩放)
-const CAM_MIN_DIST := 320.0        # 低于此距离不缩放, 保持固定大小
-const CAM_MAX_DIST := 900.0        # 超过此距离不再继续缩放
-const CAM_MIN_ZOOM := 0.9          # 最小缩放, 仅略微拉远以框住双方
+# 摄像机(双向缩放: 贴身放大 / 拉开扩放 + 纵向拟合 + 受击方优先)
+#   横向: dist<CAM_MIN_DIST 时从 CAM_MAX_ZOOM_IN 收到 1.0;
+#         CAM_MIN_DIST..CAM_MAX_DIST 之间从 1.0 扩放到 CAM_MIN_ZOOM; 超过后不再扩放
+#   纵向: 双方中立时若有人高出画面上边界, 继续压缩放框住双方(同一 CAM_MIN_ZOOM 下限)
+#   边框限制: 已最大扩放且双方间距超过帧宽时, 双方被画面边框限制无法继续拉开
+const CAM_MIN_DIST := 320.0        # 横向曲线下段端点(低于此距离进入"贴身"区间)
+const CAM_MAX_DIST := 900.0        # 横向曲线上段端点(超过此距离不再继续扩放)
+const CAM_MIN_ZOOM := 0.9          # 最小缩放(最大扩放上限), 仅略微拉远以框住双方
+const CAM_MAX_ZOOM_IN := 1.25      # 最大缩放(贴身放大上限)
 const CAM_FOLLOW_SMOOTH := 6.0     # 跟随平滑
 const CAM_ZOOM_SMOOTH := 4.0       # 缩放平滑
+const CAM_VERTICAL_MARGIN := 60.0  # 纵向拟合留白(头顶/脚底各留, 设计值可调)
+# 角色视觉包围盒相对原点的偏移(原点约在脚边; 纵向拟合用, 设计值可调)
+const FIGHTER_VISUAL_TOP := 120.0
+const FIGHTER_VISUAL_BOTTOM := 10.0
+
+# 蹬墙跳(WALL JUMP): 空中贴墙按跳跃键朝墙外弹出, 每次离地限一次
+#   前后方向键影响跳出距离: 远离墙更远, 朝向墙更近, 不按为基础值
+const WALL_JUMP_RANGE := 60.0          # 贴墙判定范围(距墙边界多近算贴墙, 设计值可调)
+const WALL_JUMP_VELOCITY_Y := -500.0   # 蹬墙跳纵向初速(默认同普通跳, 设计值可调)
+const WALL_JUMP_SPEED_X := 380.0       # 蹬墙跳基础横向弹出速度(默认同斜跳, 设计值可调)
+const WALL_JUMP_DIR_MULT_FAR := 1.3    # 按住远离墙方向: 距离倍率(设计值可调)
+const WALL_JUMP_DIR_MULT_NEAR := 0.6   # 按住朝向墙方向: 距离倍率(设计值可调)
+
+# 版边反弹(WALL BOUNCE): 受击(HIT_STUN)撞墙时按保留比例反射入射速度
+#   设计: 不追加伤害/虚血, 不改变硬直(继续受击硬直, 可构成墙边连段)
+const WALL_BOUNCE_RETENTION := 0.5     # 反弹力度保留比例(设计值可调)
+const WALL_BOUNCE_MIN_SPEED := 120.0   # 入射低于此速度不反弹(防贴墙抖动误触发, 设计值可调)
 
 # 攻击属性
 const LIGHT_DAMAGE := 50

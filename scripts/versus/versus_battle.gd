@@ -4,7 +4,7 @@ extends Node2D
 
 @onready var round_manager: RoundManager = $RoundManager
 @onready var hud: BattleHUD = $BattleHUD
-@onready var camera: Camera2D = $Camera2D
+@onready var camera: BattleCamera = $Camera2D
 
 var p1_fighter: Fighter
 var p2_fighter: Fighter
@@ -26,8 +26,14 @@ func _ready() -> void:
 	# 连接命中反馈信号(双方角色)
 	if p1_fighter:
 		p1_fighter.hit_landed.connect(_on_fighter_hit_landed)
+		p1_fighter.wall_bounced.connect(_on_wall_bounced)
 	if p2_fighter:
 		p2_fighter.hit_landed.connect(_on_fighter_hit_landed)
+		p2_fighter.wall_bounced.connect(_on_wall_bounced)
+
+	# 摄像机跟随双方(双向缩放/纵向拟合/受击方优先/边框限制)
+	if camera and p1_fighter and p2_fighter:
+		camera.setup(p1_fighter, p2_fighter)
 
 	# 连接比赛结束信号
 	if round_manager:
@@ -122,7 +128,9 @@ func _return_to_select() -> void:
 # ---------- 打击反馈 ----------
 
 func _process(delta: float) -> void:
-	_update_camera(delta)
+	# 摄像机跟随/缩放/边框限制(暂停时冻结)
+	if camera and not _paused:
+		camera.update_camera(delta)
 
 	# 震动衰减: 每帧朝随机方向偏移相机, 强度按时间衰减归零
 	if camera and _shake_strength > 0.0:
@@ -132,41 +140,16 @@ func _process(delta: float) -> void:
 		camera.offset = Vector2.ZERO
 
 
+# 版边反弹演出: 撞墙点火花 + 震屏(强度随入射力度)
+#   注意: 不加 hitstop(未在设计内), 需要时再接入
+func _on_wall_bounced(strength: float, wall_pos: Vector2) -> void:
+	_spawn_hit_spark(wall_pos, Color(0.9, 0.9, 1.0), false)
+	_shake_camera(clampf(strength * 0.05, 4.0, 14.0))
+
+
 # ---------- 摄像机 ----------
-# 固定基准大小(1.0); 双方拉开时略微拉远以框住两人;
-# 超过 CAM_MAX_DIST 后不再继续缩放(取消缩放), 仅继续跟随。
-func _update_camera(delta: float) -> void:
-	if not camera or not p1_fighter or not p2_fighter or _paused:
-		return
-
-	var p1p: Vector2 = p1_fighter.global_position
-	var p2p: Vector2 = p2_fighter.global_position
-	var mid := (p1p + p2p) * 0.5
-	var dist := absf(p1p.x - p2p.x)
-
-	# 缩放: 距离越大越接近 CAM_MIN_ZOOM, 超出阈值后保持不变
-	var span := maxf(GlobalConfig.CAM_MAX_DIST - GlobalConfig.CAM_MIN_DIST, 1.0)
-	var t := clampf((dist - GlobalConfig.CAM_MIN_DIST) / span, 0.0, 1.0)
-	var target_zoom := lerpf(1.0, GlobalConfig.CAM_MIN_ZOOM, t)
-	var zf := 1.0 - exp(-GlobalConfig.CAM_ZOOM_SMOOTH * delta)
-	camera.zoom.x = lerpf(camera.zoom.x, target_zoom, zf)
-	camera.zoom.y = camera.zoom.x
-
-	# 位置: 跟随中点, 并把可视范围限制在舞台内, 避免露出舞台之外
-	var view := Vector2(GlobalConfig.GAME_WIDTH, GlobalConfig.GAME_HEIGHT) / camera.zoom.x
-	var target := Vector2(
-		_clamp_axis(mid.x, view.x, GlobalConfig.STAGE_WIDTH),
-		_clamp_axis(mid.y, view.y, GlobalConfig.STAGE_HEIGHT)
-	)
-	var pf := 1.0 - exp(-GlobalConfig.CAM_FOLLOW_SMOOTH * delta)
-	camera.global_position = camera.global_position.lerp(target, pf)
-
-
-# 把镜头中心限制在舞台内: 可视范围小于舞台时按可视半宽夹取, 否则居中
-func _clamp_axis(v: float, view_size: float, stage_size: float) -> float:
-	if view_size >= stage_size:
-		return stage_size * 0.5
-	return clampf(v, view_size * 0.5, stage_size - view_size * 0.5)
+# 跟随/缩放/边框限制逻辑已移至 scripts/versus/battle_camera.gd(BattleCamera),
+#   由本脚本 _process 每帧驱动 camera.update_camera(delta)。
 
 
 # 命中结算回调: 统一驱动 命中定格 / 火花 / 震动 / 闪光 / 连击 / 音效

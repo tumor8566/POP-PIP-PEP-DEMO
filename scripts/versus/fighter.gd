@@ -10,6 +10,8 @@ signal state_changed(new_state)
 signal round_lost(fighter)
 # 命中结算反馈: target=受击方, attacker=攻击方, seg=命中的段, blocked=是否被防御, spot=判定区(NONE/SWEET/SOUR)
 signal hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.Segment, blocked: bool, spot: int)
+# 版边反弹: strength=入射力度(入射速度绝对值), wall_pos=撞墙点世界坐标(供演出层火花/震屏)
+signal wall_bounced(strength: float, wall_pos: Vector2)
 
 # 玩家编号
 @export var player_id: int = 1
@@ -91,6 +93,7 @@ var _grab_segment: AttackData.Segment = null  # 抓取命中段的伤害/击退�
 var _grab_move_segment: AttackData.Segment = null  # D 键抓取动作使用的段数据(在 _setup_default_attacks 构建)
 var _hit_stun_remaining := 0    # 本次受击的有效硬直帧(已按攻击方等级缩放)
 var block_stun_timer := 0       # 防御硬直锁定帧(防御中受击后短暂无法脱离防御, 同时是"脱离"的触发窗口)
+var _wall_jumps_used := 0       # 本次离地已使用的蹬墙跳次数(每次离地限一次, 落地/回中立重置)
 var _active_seg_index := -1  # 当前攻击正在激活的段索引(用于在切换段时重新配置 hitbox)
 
 # ===== 虚血 (RECOVERABLE LIFE) =====
@@ -314,13 +317,33 @@ func _physics_process(_delta: float) -> void:
 
 
 # 限制在竞技场内, 保证摄像机始终能把双方框住
+#   撞墙瞬间按规则触发版边反弹(见 _try_wall_bounce)
 func _clamp_to_stage() -> void:
 	var min_x := GlobalConfig.FIGHTER_BOUND_MARGIN
 	var max_x := GlobalConfig.STAGE_WIDTH - GlobalConfig.FIGHTER_BOUND_MARGIN
 	if global_position.x < min_x:
 		global_position.x = min_x
+		_try_wall_bounce(-1.0, min_x)
 	elif global_position.x > max_x:
 		global_position.x = max_x
+		_try_wall_bounce(1.0, max_x)
+
+
+# 版边反弹(WALL BOUNCE): 受击(HIT_STUN)滑行撞墙时, 按保留比例反射入射速度
+#   into_wall_sign: 撞墙瞬间速度应有的朝向(-1=撞左墙, +1=撞右墙)
+#   设计: 不追加伤害/虚血, 不改变硬直(继续受击硬直, 可构成墙边连段);
+#         入射速度低于门槛仅贴墙不反弹(防贴墙抖动误触发)
+func _try_wall_bounce(into_wall_sign: float, wall_x: float) -> void:
+	if current_state != FighterState.State.HIT_STUN:
+		return
+	# 速度必须朝墙内(与规定朝向同号)
+	if velocity.x * into_wall_sign <= 0.0:
+		return
+	if absf(velocity.x) < GlobalConfig.WALL_BOUNCE_MIN_SPEED:
+		return
+	var impact := absf(velocity.x)
+	velocity.x = -velocity.x * GlobalConfig.WALL_BOUNCE_RETENTION
+	wall_bounced.emit(impact, Vector2(wall_x, global_position.y))
 
 
 # ============ 状态处理 ============
@@ -391,9 +414,49 @@ func _process_stand_block() -> void:
 
 
 func _process_jump() -> void:
+	# 蹬墙跳: 空中贴墙按跳跃键, 朝墙外弹出(每次离地限一次)
+	if _try_wall_jump():
+		return
 	# 空中保留起跳时的横向惯性(斜跳/冲跳惯性), 不再按输入每帧覆盖速度
 	if _is_grounded() and state_time > 5:
+		_wall_jumps_used = 0
 		_change_state(FighterState.State.IDLE)
+
+
+# 蹬墙跳(WALL JUMP): 空中贴近版边时按跳跃键, 朝墙外弹出
+#   限制: 每次离地仅一次(落地或回到中立状态后重置)
+#   距离: 前后方向键影响弹出距离——按远离墙方向更远, 按朝向墙方向更近, 不按为基础值
+func _try_wall_jump() -> bool:
+	if _is_grounded() or _wall_jumps_used > 0:
+		return false
+	if not InputHandler.is_just_pressed(player_id, InputHandler.InputButton.UP):
+		return false
+
+	var min_x := GlobalConfig.FIGHTER_BOUND_MARGIN
+	var max_x := GlobalConfig.STAGE_WIDTH - GlobalConfig.FIGHTER_BOUND_MARGIN
+	var wall_side := 0   # -1=左墙, +1=右墙
+	if global_position.x <= min_x + GlobalConfig.WALL_JUMP_RANGE:
+		wall_side = -1
+	elif global_position.x >= max_x - GlobalConfig.WALL_JUMP_RANGE:
+		wall_side = 1
+	else:
+		return false
+
+	# 方向键相对墙法向: +1=远离墙, -1=朝向墙, 0=没按
+	var h := InputHandler.get_horizontal(player_id)
+	var away := float(h * -wall_side)
+	var mult := 1.0
+	if away > 0.0:
+		mult = GlobalConfig.WALL_JUMP_DIR_MULT_FAR
+	elif away < 0.0:
+		mult = GlobalConfig.WALL_JUMP_DIR_MULT_NEAR
+
+	velocity.x = clampf(-wall_side * GlobalConfig.WALL_JUMP_SPEED_X * mult,
+		-GlobalConfig.AIR_MAX_SPEED_X, GlobalConfig.AIR_MAX_SPEED_X)
+	velocity.y = GlobalConfig.WALL_JUMP_VELOCITY_Y
+	_wall_jumps_used += 1
+	_change_state(FighterState.State.JUMP_UP)
+	return true
 
 
 # ============ F 推进技 ============
@@ -1191,7 +1254,8 @@ func _on_knockout() -> void:
 func _do_jump() -> void:
 	if not _is_grounded():
 		return
-	
+
+	_wall_jumps_used = 0   # 地面起跳: 重置本次离地的蹬墙次数
 	var h := InputHandler.get_horizontal(player_id)
 	var keep := velocity.x * GlobalConfig.JUMP_MOMENTUM_KEEP   # 保留部分当前移动惯性
 	velocity.x = clampf(keep + h * GlobalConfig.JUMP_SPEED_X,
@@ -1223,7 +1287,9 @@ func _check_dash_input() -> void:
 func _change_state(new_state: int) -> void:
 	if current_state == new_state:
 		return
-	
+	# 回到中立: 重置蹬墙跳计数(每次离地限一次, 任何落地路径都经由 IDLE)
+	if new_state == FighterState.State.IDLE:
+		_wall_jumps_used = 0
 	current_state = new_state
 	state_time = 0
 	emit_signal("state_changed", new_state)

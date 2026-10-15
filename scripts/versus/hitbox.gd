@@ -187,6 +187,8 @@ func _on_projectile_collision(other: Hitbox) -> bool:
 # 相杀 (CRASH): 双方攻击判定重叠时(且双方均未受击), 双方产生停帧并按攻击等级互相推开
 func _try_crash(other: Hitbox) -> void:
 	# 双方必须都是有效攻击中的角色, 且都不是飞行道具(飞行道具走抵消逻辑)
+	if not other.current_segment:
+		return   # 对方判定框未激活(area_entered 会在判定框存在时触发), 不参与相杀
 	if other in crashed_with:
 		return
 	if current_segment.has_attribute(AttackData.AttackAttribute.PROJECTILE):
