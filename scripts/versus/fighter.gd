@@ -241,54 +241,10 @@ func _setup_default_attacks() -> void:
 	atk_special.segments = [s_spec]
 	special_attacks.append(atk_special)
 
-	# ============ 必杀技·崩拳: 指令 QCB(214) + A/B/C ============
-	#   默认数据(角色差异化数据到位后直接覆盖 special_attacks[1] 即可):
-	#   近距离重拳, 高击退, 站/蹲均可防御
-	var atk_qcb := AttackData.new()
-	atk_qcb.attack_name = "崩拳"
-	atk_qcb.attack_type = AttackData.AttackType.SPECIAL
-	atk_qcb.attack_level = 4
-	atk_qcb.meter_gain = 12
-	atk_qcb.meter_cost = 0
-	var s_qcb := AttackData.Segment.new()
-	s_qcb.defense_property = AttackData.DefenseProperty.FULL_BLOCK
-	s_qcb.attack_attributes = AttackData.AttackAttribute.CHEST
-	s_qcb.damage = 90
-	s_qcb.hit_stun = 20
-	s_qcb.block_stun = 12
-	s_qcb.knockback_x = 340.0
-	s_qcb.hitbox_offset = Vector2(75, -45)
-	s_qcb.hitbox_size = Vector2(150, 75)
-	s_qcb.trigger_frame = 8
-	s_qcb.active_duration = 5
-	atk_qcb.segments = [s_qcb]
-	special_attacks.append(atk_qcb)
-
-	# ============ 必杀技·升龙拳: 指令 DP(623) + A/B/C ============
-	#   默认数据(角色差异化数据到位后直接覆盖 special_attacks[2] 即可):
-	#   对空升龙: 判定框高且偏上, 命中强制倒地击飞(走 KNOCKDOWN -> LIEDOWN ->
-	#   受身/起身 流程, 可被追地); 击飞纵向速度会被 JUMP_VELOCITY 封顶
-	var atk_dp := AttackData.new()
-	atk_dp.attack_name = "升龙拳"
-	atk_dp.attack_type = AttackData.AttackType.SPECIAL
-	atk_dp.attack_level = 4
-	atk_dp.meter_gain = 12
-	atk_dp.meter_cost = 0
-	var s_dp := AttackData.Segment.new()
-	s_dp.defense_property = AttackData.DefenseProperty.FULL_BLOCK
-	s_dp.attack_attributes = AttackData.AttackAttribute.CHEST
-	s_dp.damage = 110
-	s_dp.hit_stun = 20
-	s_dp.block_stun = 14
-	s_dp.knockback_x = 160.0
-	s_dp.knockback_y = -520.0   # 向上击飞(负=上), 倒地分支按 JUMP_VELOCITY 封顶
-	s_dp.causes_knockdown = true
-	s_dp.hitbox_offset = Vector2(55, -95)
-	s_dp.hitbox_size = Vector2(95, 150)
-	s_dp.trigger_frame = 7
-	s_dp.active_duration = 6
-	atk_dp.segments = [s_dp]
-	special_attacks.append(atk_dp)
+	# ============ 其他必杀技数据由用户自行管理 ============
+	#   指令识别已就绪: SPECIAL_MOTIONS 中第 i 条指令命中时取 special_attacks[i];
+	#   向 special_attacks 追加自己的招式数据(下标 1/2/...)即可让 214/623 等指令生效,
+	#   本文件不预置任何默认必杀技数据(仅保留既有的气拳)。
 
 	# ============ 抓取段(D 键): 需要被拆投(防御属性) + 抓取属性 ============
 	_grab_move_segment = AttackData.Segment.new()
@@ -704,11 +660,14 @@ func _history_motion_end(steps: Array) -> int:
 	return -1
 
 
-# 识别指令并返回对应必杀技索引(special_attacks 下标); 未识别返回 -1
+# 识别指令并返回对应必杀技在 special_attacks 中的下标; 未识别/无对应数据返回 -1
+#   只考虑"有招式数据"的指令(越界下标跳过): 没有数据就不触发, 退化为通常技
 func _recognized_special_index() -> int:
 	var best_index := -1
 	var best_end := -1
 	for i in SPECIAL_MOTIONS.size():
+		if i >= special_attacks.size():
+			continue
 		var end := _history_motion_end(SPECIAL_MOTIONS[i])
 		if end > best_end:
 			best_end = end
@@ -976,11 +935,10 @@ func _handle_attack_input(airborne := false) -> void:
 		return
 
 	# 必杀技(Special Move): 仅由指令输入触发, 不提供组合键快捷施放
-	#   指令与招式一一对应(默认数据, 角色可覆盖 special_attacks):
-	#     236 QCF + A/B/C = 必杀技·气拳
-	#     214 QCB + A/B/C = 必杀技·崩拳
-	#     623 DP  + A/B/C = 必杀技·升龙拳(强制倒地击飞)
-	#   指令不成立时退化为通常技; 成功后清除指令历史(消耗, 防重复触发)
+	#   指令 -> special_attacks 下标(SPECIAL_MOTIONS 顺序): 236->[0](气拳) 等;
+	#   招式数据由用户自行管理: 往 special_attacks 追加数据即使对应指令生效,
+	#   没有数据的指令不触发, 自然退化为通常技
+	#   触发键: A/B/C 任一(招式由指令区分, 不由按键区分); 成功后清除指令历史(消耗)
 	if _any_attack_button_just_pressed():
 		var mi := _recognized_special_index()
 		if mi >= 0 and _try_start_special(mi):
