@@ -6,7 +6,8 @@
 #     2. 双方都在画面边框继续拉开 -> 扩放到上限(CAM_MIN_ZOOM); 超过上限后
 #        双方被画面边框限制, 无法继续拉开(帧边缘∩墙边界, 取更严者)
 #     3. 双方贴身 -> 放大, 上限 CAM_MAX_ZOOM_IN
-#     4. 双方中立(无人受击)时, 一方跳高出画面上边界 -> 纵向扩放到足以显示双方
+#     4. 纵向拟合: 只要未进入受击方优先模式(含"攻击方在地面/受击方在空中"
+#        的受击情况), 一方跳高出画面上边界 -> 纵向扩放到足以显示双方
 #        (同一 CAM_MIN_ZOOM 下限; 镜头允许高出舞台顶部, 底部不露出舞台底)
 #     5. 双方均离地且一方受击 -> 受击方优先: 中心钉受击方, 缩放冻结;
 #        攻击方移动出画面不触发任何扩放
@@ -54,10 +55,6 @@ func _update_mode() -> void:
 	else:
 		_mode = Mode.NORMAL
 
-func _anyone_hit() -> bool:
-	return _a.current_state in FighterState.HIT_REACTION_STATES \
-		or _b.current_state in FighterState.HIT_REACTION_STATES
-
 func _victim() -> Fighter:
 	return _a if _a.current_state in FighterState.HIT_REACTION_STATES else _b
 
@@ -80,9 +77,10 @@ func _target_zoom() -> float:
 		var t := clampf((dist - GlobalConfig.CAM_MIN_DIST) / span, 0.0, 1.0)
 		z = lerpf(1.0, GlobalConfig.CAM_MIN_ZOOM, t)
 
-	# 纵向拟合(仅双方中立无人受击时): 只允许把镜头推远, 不允许推近
-	if not _anyone_hit():
-		z = minf(z, _vertical_fit_zoom())
+	# 纵向拟合: 除受击方优先模式外总是生效
+	#   (含"攻击方在地面/受击方在空中"的受击情况: 扩放框住双方, 不冻结)
+	#   只允许把镜头推远, 不允许推近
+	z = minf(z, _vertical_fit_zoom())
 
 	return clampf(z, GlobalConfig.CAM_MIN_ZOOM, GlobalConfig.CAM_MAX_ZOOM_IN)
 
