@@ -187,7 +187,7 @@ func _on_fighter_hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.
 
 	if blocked:
 		AudioManager.play_hit(0.5, true)
-		# 格挡不是"命中", 不计入连击; 已有连击继续走滞留计时自然结束
+		# 格挡不是"命中", 不计入连击; 记录状态不变(仍在硬直内则继续, 已结束则照常显示滞留)
 	else:
 		if is_instance_valid(attacker):
 			_register_combo_hit(attacker, target)
@@ -203,6 +203,7 @@ func _on_fighter_hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.
 
 # 有效命中(非格挡, 含抓取结算) -> 登记到攻击者的计数器并立即刷新其血条下方数字
 #   回合结束后直接忽略; 记录范围/重置由 ComboTracker 判定
+#   1 秒显示滞留不影响这里: 滞留期间的命中同样走此函数, 由记录器判为新连击
 func _register_combo_hit(attacker: Fighter, target: Fighter) -> void:
 	if not _combo_enabled:
 		return
@@ -214,7 +215,8 @@ func _register_combo_hit(attacker: Fighter, target: Fighter) -> void:
 		hud.update_combo(attacker.player_id, hits)
 
 
-# 每帧驱动: 对手脱离受击硬直时立即结束并重置记录; 数字滞留 1 秒后隐藏
+# 每帧驱动: 对手脱离受击硬直时立即结束并重置记录; 1 秒后只隐藏显示
+#   1 秒是纯显示时长, 不构成记录窗口: 期间命中由 _register_combo_hit 开新连击
 func _update_combo_trackers(delta: float) -> void:
 	if not _combo_enabled:
 		return
