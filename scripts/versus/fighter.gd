@@ -10,6 +10,10 @@ signal state_changed(new_state)
 signal round_lost(fighter)
 # 命中结算反馈: target=受击方, attacker=攻击方, seg=命中的段, blocked=是否被防御, spot=判定区(NONE/SWEET/SOUR)
 signal hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.Segment, blocked: bool, spot: int)
+# 抓取结算等不产生打击演出的有效命中: 仅用于连击计数(参数顺序与 _register_combo_hit 对齐)
+#   抓取成立时只进拆投窗口、不发 hit_landed; 伤害结算时补发此信号, 让抓取能带进连段;
+#   拆投成功不发出, 自然不计入连击
+signal combo_hit_landed(attacker: Fighter, target: Fighter)
 # 版边反弹: strength=入射力度(入射速度绝对值), wall_pos=撞墙点世界坐标(供演出层火花/震屏)
 signal wall_bounced(strength: float, wall_pos: Vector2)
 
@@ -1066,6 +1070,9 @@ func _process_grabbed() -> void:
 		var kbx: float = seg.knockback_x if seg else 150.0
 		_on_grabbed_settle(dmg, kbx)
 		if is_instance_valid(atk):
+			# 抓取伤害结算算一次有效命中(可带进连段): 只驱动连击计数,
+			#   不改变抓取原有的打击反馈(不额外加火花/定格/音效)
+			emit_signal("combo_hit_landed", atk, self)
 			atk._on_grab_landed()
 
 

@@ -23,6 +23,8 @@ const ComboTrackerScript := preload("res://scripts/versus/combo_tracker.gd")
 # 连击计数器: 下标 0 = P1 作为攻击者的连击, 下标 1 = P2 作为攻击者的连击
 #   双方各自独立; 显示在攻击者自己的血量条下方
 var _combo_trackers: Array = []
+# 回合结束后停止记录(比赛结束/回合间隙的命中不计入, 也不显示)
+var _combo_enabled := true
 
 
 func _ready() -> void:
@@ -31,20 +33,24 @@ func _ready() -> void:
 	_combo_trackers = [ComboTrackerScript.new(), ComboTrackerScript.new()]
 
 	# 连接命中反馈信号(双方角色)
+	#   combo_hit_landed: 抓取结算等不产生打击演出的有效命中, 只驱动连击计数
 	if p1_fighter:
 		p1_fighter.hit_landed.connect(_on_fighter_hit_landed)
 		p1_fighter.wall_bounced.connect(_on_wall_bounced)
+		p1_fighter.combo_hit_landed.connect(_register_combo_hit)
 	if p2_fighter:
 		p2_fighter.hit_landed.connect(_on_fighter_hit_landed)
 		p2_fighter.wall_bounced.connect(_on_wall_bounced)
+		p2_fighter.combo_hit_landed.connect(_register_combo_hit)
 
 	# 摄像机跟随双方(双向缩放/纵向拟合/受击方优先/边框限制)
 	if camera and p1_fighter and p2_fighter:
 		camera.setup(p1_fighter, p2_fighter)
 
-	# 连接比赛结束/回合开始信号(回合开始清空连击, 避免跨回合续上旧计数)
+	# 连接回合信号: 回合结束停止记录, 新回合恢复记录(均清空双方计数)
 	if round_manager:
 		round_manager.match_end.connect(_on_match_end)
+		round_manager.round_end.connect(_on_round_end)
 		round_manager.round_start.connect(_on_round_start)
 
 
@@ -123,7 +129,10 @@ func _setup_arena() -> void:
 func _on_match_end(winner_id: int) -> void:
 	var winner_text := "Player %d Wins!" % winner_id
 	print(winner_text)
-	
+	# 比赛结束: 停止连击记录(结算/演出期间的命中不计入)
+	_combo_enabled = false
+	_clear_combos()
+
 	# 延迟返回选人界面
 	var timer := get_tree().create_timer(5.0)
 	timer.timeout.connect(_return_to_select)
@@ -192,29 +201,46 @@ func _on_fighter_hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.
 
 # ---------- 连击计数器 ----------
 
-# 有效命中(非格挡) -> 攻击者的计数器 +1, 并立即刷新该角色血条下方的数字
+# 有效命中(非格挡, 含抓取结算) -> 登记到攻击者的计数器并立即刷新其血条下方数字
+#   回合结束后直接忽略; 记录范围/重置由 ComboTracker 判定
 func _register_combo_hit(attacker: Fighter, target: Fighter) -> void:
+	if not _combo_enabled:
+		return
 	var idx: int = attacker.player_id - 1
 	if idx < 0 or idx >= _combo_trackers.size():
 		return
-	_combo_trackers[idx].register_hit(target)
+	var hits: int = _combo_trackers[idx].register_hit(target)
 	if hud:
-		hud.update_combo(attacker.player_id, _combo_trackers[idx].count)
+		hud.update_combo(attacker.player_id, hits)
 
 
-# 每帧驱动滞留窗口: 对手恢复自由活动且窗口内没有下一次命中时隐藏计数器
+# 每帧驱动: 对手脱离受击硬直时立即结束并重置记录; 数字滞留 1 秒后隐藏
 func _update_combo_trackers(delta: float) -> void:
+	if not _combo_enabled:
+		return
 	for i in _combo_trackers.size():
 		if _combo_trackers[i].update(delta) and hud:
 			hud.update_combo(i + 1, 0)
 
 
-# 新回合开始: 清空双方连击(不把上一回合的计数续到新回合)
-func _on_round_start(_round_number: int) -> void:
+# 清空双方连击记录与显示(回合开始/结束/比赛结束共用)
+func _clear_combos() -> void:
 	for i in _combo_trackers.size():
 		_combo_trackers[i].reset()
 		if hud:
 			hud.update_combo(i + 1, 0)
+
+
+# 回合结束: 停止记录并清空(KO/超时之后的命中不计入连击)
+func _on_round_end(_winner_id: int) -> void:
+	_combo_enabled = false
+	_clear_combos()
+
+
+# 新回合开始: 恢复记录(计数从空开始, 不沿用上一回合)
+func _on_round_start(_round_number: int) -> void:
+	_combo_enabled = true
+	_clear_combos()
 
 
 # 甜点/酸点的额外演出: 在命中处显示提示文本

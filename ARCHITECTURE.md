@@ -156,15 +156,15 @@ KNOCKDOWN(击飞滑行) --落地--> LIEDOWN(躺地)
 | 环节 | 规则 |
 | ---- | ---- |
 | 显示位置 | **攻击方**血量条正下方（`P1Side/ComboLabel` / `P2Side/ComboLabel`），双方各自独立；气槽与回合指示为这一行下移腾出空间 |
-| 计数 | 由 `Fighter.hit_landed` 信号驱动，每次**有效命中（非格挡）** +1；**≥1 hit 即显示**（`1 HIT` / `N HITS`），命中当帧实时刷新 |
-| 连击持续 | 受击方处于 `FighterState.RESTRICTED_STATES`（HIT_STUN / GRABBED / KNOCKDOWN / LIEDOWN / TECH / SOFT_KNOCKDOWN / WAKEUP / CRASHED），即"不能自由活动"时，连击持续 |
-| 中断与滞留 | 受击方一旦恢复自由活动（含防御/走动/攻击/回合流程状态），计数器进入 **1 秒滞留窗口**（`GlobalConfig.COMBO_LINGER_SECONDS`），数字定格显示；窗口内再次命中 → 连击继续 +1 并重置窗口；窗口内没有下一次命中 → 连击中断，计数清零并隐藏 |
-| 重新计数 | 清零后下一次命中从 1 开始，不沿用旧数字 |
+| 记录范围 | **仅限对方处于受击硬直**（`FighterState.RESTRICTED_STATES`：HIT_STUN / GRABBED / KNOCKDOWN / LIEDOWN / TECH / SOFT_KNOCKDOWN / WAKEUP / CRASHED，即被命中后不能自由活动）的时间。范围内每次**有效命中（非格挡）**累加到同一连击，**≥1 hit 即显示**（`1 HIT` / `N HITS`），命中当帧实时刷新 |
+| 连击结束 | 对方一旦恢复自由活动（防御/走动/攻击/回合流程状态），**记录立即重置**（`count=0`）；HUD 保留最后数字**滞留 1 秒**（`GlobalConfig.COMBO_LINGER_SECONDS`）后隐藏 |
+| 重新记录 | 记录结束后（含滞留期间）的命中开启**新连击**，从 1 开始，不沿用旧数字 |
+| 回合结束 | `round_end` / `match_end` 后停止记录并清空显示；`round_start` 恢复记录（从空开始） |
 
-- **驱动**：`VersusBattle._process` 每帧调用 `ComboTracker.update(delta)`（暂停时冻结计时）；`RoundManager.round_start` 清空双方计数，避免跨回合把上一回合的数字续上。`ComboTracker` 为纯逻辑类，不依赖场景树，便于单独验证。
-- **格挡**：`hit_landed(blocked=true)` 不是"命中"，不计入连击；已有连击继续走滞留计时自然结束。
+- **驱动**：`VersusBattle._process` 每帧调用 `ComboTracker.update(delta)`（暂停时冻结）；命中由 `hit_landed` 登记，且仅非格挡才登记。`ComboTracker` 为纯逻辑类，不依赖场景树，便于单独验证。
+- **抓取**：抓取成立时只进拆投窗口，不发 `hit_landed`；**伤害结算**（`_process_grabbed` → `_on_grabbed_settle`）发出 `combo_hit_landed(attacker, target)`，同样登记一次有效命中。由于 GRABBED / KNOCKDOWN 都在记录范围内，**抓取可以接在连段中间并继续连**（"抓取也能带进连段"）；拆投成功不结算伤害、不发信号，不计入连击。该信号只驱动连击计数，不给抓取额外加火花/定格/音效。
+- **格挡**：`hit_landed(blocked=true)` 不是"命中"，不计入连击。
 - **与 `Fighter.combo_count` 的区别**：后者是单次招式内的多段命中数（起手/收招清零），仅作角色内部数据，不驱动 HUD 显示。
-- **已知边界**：抓取伤害结算（`_on_grabbed_settle`）目前不发出 `hit_landed`，因此抓取本身不计入连击（如需计入，需在该处补发信号）。
 
 ## 按键映射
 

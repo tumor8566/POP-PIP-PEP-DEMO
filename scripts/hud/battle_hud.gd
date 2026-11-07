@@ -222,8 +222,8 @@ func _setup_combo_labels() -> void:
 
 # 刷新指定玩家(攻击者)血条下方的连击数字:
 #   count >= 1 即显示("1 HIT" / "N HITS"), count <= 0 隐藏
-#   连击中断后的 1 秒滞留由 VersusBattle 驱动(滞留期间数字保持显示,
-#   窗口结束才调用 update_combo(id, 0) 隐藏)
+#   连击结束(对方恢复自由活动)后记录立即重置, 最后数字滞留 1 秒由 VersusBattle 驱动,
+#   窗口结束才调用 update_combo(id, 0); 滞留期间若有新命中则直接显示新连击数字
 func update_combo(player_id: int, count: int) -> void:
 	var label: Label = p1_combo_label if player_id == 1 else p2_combo_label
 	if not label:
