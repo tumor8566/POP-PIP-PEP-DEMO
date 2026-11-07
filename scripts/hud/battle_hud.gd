@@ -17,7 +17,9 @@ var p2: Fighter
 @onready var p1_rounds: HBoxContainer = $HUDContainer/P1Side/RoundIndicators
 @onready var p2_rounds: HBoxContainer = $HUDContainer/P2Side/RoundIndicators
 @onready var timer_label: Label = $HUDContainer/CenterInfo/TimerLabel
-@onready var combo_label: Label = $HUDContainer/CenterInfo/ComboLabel
+# 连击计数器: 分别位于各自血量条正下方(P1Side/P2Side 内)
+@onready var p1_combo_label: Label = $HUDContainer/P1Side/ComboLabel
+@onready var p2_combo_label: Label = $HUDContainer/P2Side/ComboLabel
 
 # 训练模式信息面板
 var _training_panel: Panel
@@ -36,6 +38,7 @@ func _ready() -> void:
 
 	_connect_signals()
 	_setup_names()
+	_setup_combo_labels()
 
 	if MatchData.current_mode == MatchData.GameMode.TRAINING:
 		_setup_training_panel()
@@ -207,13 +210,29 @@ func _on_p2_gray_changed(current_gray: int, max_gray: int) -> void:
 		p2_gray_bar.value = current_gray
 
 
-func update_combo(count: int) -> void:
-	if combo_label:
-		if count >= 2:
-			combo_label.text = "%d HITS" % count
-			combo_label.visible = true
-		else:
-			combo_label.visible = false
+# 连击计数器样式: 金黄醒目数字, 位于血量条下方(布局见 versus_battle.tscn)
+func _setup_combo_labels() -> void:
+	for label in [p1_combo_label, p2_combo_label]:
+		if not label:
+			continue
+		label.add_theme_color_override("font_color", Color(1, 0.85, 0.2, 1))
+		label.add_theme_font_size_override("font_size", 24)
+		label.visible = false
+
+
+# 刷新指定玩家(攻击者)血条下方的连击数字:
+#   count >= 1 即显示("1 HIT" / "N HITS"), count <= 0 隐藏
+#   连击中断后的 1 秒滞留由 VersusBattle 驱动(滞留期间数字保持显示,
+#   窗口结束才调用 update_combo(id, 0) 隐藏)
+func update_combo(player_id: int, count: int) -> void:
+	var label: Label = p1_combo_label if player_id == 1 else p2_combo_label
+	if not label:
+		return
+	if count >= 1:
+		label.text = "1 HIT" if count == 1 else "%d HITS" % count
+		label.visible = true
+	else:
+		label.visible = false
 
 
 func update_timer(time_sec: int) -> void:

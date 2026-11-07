@@ -15,6 +15,10 @@ const MAX_ROUNDS := 3            # 最大回合数(三局两胜)
 const MAX_HEALTH := 100          # 最大血量 (100 H)
 const MAX_METER := 100           # 最大气槽 (100 P)
 
+# 连击计数器: 对手恢复自由活动后, 计数滞留(观察)窗口(秒)
+#   窗口内再次命中则连击继续; 窗口内无下一次命中则连击中断, 计数清零并隐藏
+const COMBO_LINGER_SECONDS := 1.0
+
 # 角色通用属性
 const WALK_SPEED := 400.0
 const DASH_SPEED := 1000.0

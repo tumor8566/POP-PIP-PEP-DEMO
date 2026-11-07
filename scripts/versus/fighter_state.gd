@@ -60,6 +60,14 @@ const HIT_REACTION_STATES := [
 	State.HIT_STUN, State.KNOCKDOWN, State.SOFT_KNOCKDOWN,
 ]
 
+# "不能自由活动"的状态(连击判定用): 对手处于这些状态时连击持续;
+#   一旦脱离即视为可自由活动, 连击进入滞留/观察窗口(详见第12节)
+#   不含防御/脱离/回合流程状态: 这些是玩家可自主操作或回合已结束的情形
+const RESTRICTED_STATES := [
+	State.HIT_STUN, State.GRABBED, State.KNOCKDOWN, State.LIEDOWN,
+	State.TECH, State.SOFT_KNOCKDOWN, State.WAKEUP, State.CRASHED,
+]
+
 # 状态是否可取消(用于连招系统)
 # 取消链: 通常技(轻/中/重) -> 必杀技(招式数据由用户管理, 链尾)
 const CANCELLABLE_STATES := [

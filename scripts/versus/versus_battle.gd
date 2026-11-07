@@ -17,11 +17,18 @@ var _pause_menu: CanvasLayer
 var _shake_strength := 0.0
 var _shake_decay := 700.0   # 像素/秒, 震动衰减速率
 var _hit_spark_scene: PackedScene = preload("res://resources/effects/hit_spark.tscn")
+# 显式 preload, 不依赖 Godot 全局类缓存(新增脚本首次运行/headless 均可解析)
+const ComboTrackerScript := preload("res://scripts/versus/combo_tracker.gd")
+
+# 连击计数器: 下标 0 = P1 作为攻击者的连击, 下标 1 = P2 作为攻击者的连击
+#   双方各自独立; 显示在攻击者自己的血量条下方
+var _combo_trackers: Array = []
 
 
 func _ready() -> void:
 	_load_characters()
 	_setup_arena()
+	_combo_trackers = [ComboTrackerScript.new(), ComboTrackerScript.new()]
 
 	# 连接命中反馈信号(双方角色)
 	if p1_fighter:
@@ -35,9 +42,10 @@ func _ready() -> void:
 	if camera and p1_fighter and p2_fighter:
 		camera.setup(p1_fighter, p2_fighter)
 
-	# 连接比赛结束信号
+	# 连接比赛结束/回合开始信号(回合开始清空连击, 避免跨回合续上旧计数)
 	if round_manager:
 		round_manager.match_end.connect(_on_match_end)
+		round_manager.round_start.connect(_on_round_start)
 
 
 func _load_characters() -> void:
@@ -132,6 +140,10 @@ func _process(delta: float) -> void:
 	if camera and not _paused:
 		camera.update_camera(delta)
 
+	# 连击滞留计时(暂停时冻结, 与战斗暂停一致)
+	if not _paused:
+		_update_combo_trackers(delta)
+
 	# 震动衰减: 每帧朝随机方向偏移相机, 强度按时间衰减归零
 	if camera and _shake_strength > 0.0:
 		camera.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake_strength
@@ -166,16 +178,43 @@ func _on_fighter_hit_landed(target: Fighter, attacker: Fighter, seg: AttackData.
 
 	if blocked:
 		AudioManager.play_hit(0.5, true)
-		hud.update_combo(0)
+		# 格挡不是"命中", 不计入连击; 已有连击继续走滞留计时自然结束
 	else:
 		if is_instance_valid(attacker):
-			hud.update_combo(attacker.combo_count)
+			_register_combo_hit(attacker, target)
 		AudioManager.play_hit(_hit_power(seg), false)
 		# 甜点: 额外演出(角色闪白 + 提示文本)
 		if spot == Hitbox.Spot.SWEET:
 			_spawn_spot_banner(spark_pos, "SWEET 甜点", Color(1.0, 0.85, 0.2))
 		elif spot == Hitbox.Spot.SOUR:
 			_spawn_spot_banner(spark_pos, "SOUR 酸点", Color(0.6, 0.6, 0.7))
+
+
+# ---------- 连击计数器 ----------
+
+# 有效命中(非格挡) -> 攻击者的计数器 +1, 并立即刷新该角色血条下方的数字
+func _register_combo_hit(attacker: Fighter, target: Fighter) -> void:
+	var idx: int = attacker.player_id - 1
+	if idx < 0 or idx >= _combo_trackers.size():
+		return
+	_combo_trackers[idx].register_hit(target)
+	if hud:
+		hud.update_combo(attacker.player_id, _combo_trackers[idx].count)
+
+
+# 每帧驱动滞留窗口: 对手恢复自由活动且窗口内没有下一次命中时隐藏计数器
+func _update_combo_trackers(delta: float) -> void:
+	for i in _combo_trackers.size():
+		if _combo_trackers[i].update(delta) and hud:
+			hud.update_combo(i + 1, 0)
+
+
+# 新回合开始: 清空双方连击(不把上一回合的计数续到新回合)
+func _on_round_start(_round_number: int) -> void:
+	for i in _combo_trackers.size():
+		_combo_trackers[i].reset()
+		if hud:
+			hud.update_combo(i + 1, 0)
 
 
 # 甜点/酸点的额外演出: 在命中处显示提示文本

@@ -37,6 +37,7 @@ FightingGame/
 │   │   ├── hurtbox.gd         # 受击判定框
 │   │   ├── battle_camera.gd   # 战斗摄像机: 双向缩放/纵向拟合/受击方优先/边框限制
 │   │   ├── round_manager.gd   # 回合管理: 倒计时/胜负/三局两胜
+│   │   ├── combo_tracker.gd   # 连击计数: 命中累计/中断滞留(纯逻辑)
 │   │   ├── versus_battle.gd   # 对战场景主控制器
 │   │   └── training_dummy.gd  # 训练假人AI
 │   └── hud/
@@ -149,6 +150,21 @@ KNOCKDOWN(击飞滑行) --落地--> LIEDOWN(躺地)
 - **触发键**：指令 + A/B/C 任一攻击键（招式由指令区分，不由按键区分）；乱序/滑出窗口(>24帧)不识别。
 - **起手与取消**均可触发（取消过第一段触发帧后，`_check_cancel_input`）；成功后 `clear_motion_history` **消耗**指令历史，防止同一次输入重复触发。
 - 击飞类招式（段 `causes_knockdown`）命中站地上的对手时，`_process_knockdown` 有 2 帧保护且上升中(`velocity.y < 0`)不判落地——否则起跳当帧 `is_on_floor()` 的旧值 `true` 会把击飞升空误判为已落地，直接跳进躺地。
+
+### 12. 连击计数器 (ComboTracker)
+
+| 环节 | 规则 |
+| ---- | ---- |
+| 显示位置 | **攻击方**血量条正下方（`P1Side/ComboLabel` / `P2Side/ComboLabel`），双方各自独立；气槽与回合指示为这一行下移腾出空间 |
+| 计数 | 由 `Fighter.hit_landed` 信号驱动，每次**有效命中（非格挡）** +1；**≥1 hit 即显示**（`1 HIT` / `N HITS`），命中当帧实时刷新 |
+| 连击持续 | 受击方处于 `FighterState.RESTRICTED_STATES`（HIT_STUN / GRABBED / KNOCKDOWN / LIEDOWN / TECH / SOFT_KNOCKDOWN / WAKEUP / CRASHED），即"不能自由活动"时，连击持续 |
+| 中断与滞留 | 受击方一旦恢复自由活动（含防御/走动/攻击/回合流程状态），计数器进入 **1 秒滞留窗口**（`GlobalConfig.COMBO_LINGER_SECONDS`），数字定格显示；窗口内再次命中 → 连击继续 +1 并重置窗口；窗口内没有下一次命中 → 连击中断，计数清零并隐藏 |
+| 重新计数 | 清零后下一次命中从 1 开始，不沿用旧数字 |
+
+- **驱动**：`VersusBattle._process` 每帧调用 `ComboTracker.update(delta)`（暂停时冻结计时）；`RoundManager.round_start` 清空双方计数，避免跨回合把上一回合的数字续上。`ComboTracker` 为纯逻辑类，不依赖场景树，便于单独验证。
+- **格挡**：`hit_landed(blocked=true)` 不是"命中"，不计入连击；已有连击继续走滞留计时自然结束。
+- **与 `Fighter.combo_count` 的区别**：后者是单次招式内的多段命中数（起手/收招清零），仅作角色内部数据，不驱动 HUD 显示。
+- **已知边界**：抓取伤害结算（`_on_grabbed_settle`）目前不发出 `hit_landed`，因此抓取本身不计入连击（如需计入，需在该处补发信号）。
 
 ## 按键映射
 
