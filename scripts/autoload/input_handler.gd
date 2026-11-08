@@ -23,7 +23,8 @@ const MOTION_HISTORY_FRAMES := 24
 const INPUT_CFG := "user://input.cfg"
 
 # 默认按键映射(动作名 -> 按键数组, 第一个为主键, 用于显示)
-# 每个动作可绑定多个按键: 小键盘 + 主键盘易达键, 避免无小键盘时 2P 无法操作
+#   默认每个动作只绑定一枚主键: 2P 不再提供"无小键盘时"的主键盘副键。
+#   数组形式保留, 便于以后按需扩展; 玩家自定义重绑定后该动作也只保留一枚键。
 const DEFAULT_MAP := {
 	"p1_left": [KEY_A],
 	"p1_right": [KEY_D],
@@ -41,14 +42,15 @@ const DEFAULT_MAP := {
 	"p2_right": [KEY_RIGHT],
 	"p2_up": [KEY_UP],
 	"p2_down": [KEY_DOWN],
-	"p2_a": [KEY_KP_1, KEY_COMMA],
-	"p2_b": [KEY_KP_2, KEY_PERIOD],
-	"p2_c": [KEY_KP_3, KEY_SLASH],
-	"p2_d": [KEY_KP_4, KEY_APOSTROPHE],
-	# 推进 F 的 2P 默认键为 Numpad 6(原 E 主键); 副键与主键成对互换
-	"p2_e": [KEY_KP_5, KEY_BACKSLASH],
-	"p2_f": [KEY_KP_6, KEY_P],
-	"p2_start": [KEY_KP_ENTER, KEY_ENTER],
+	"p2_a": [KEY_KP_1],
+	"p2_b": [KEY_KP_2],
+	"p2_c": [KEY_KP_3],
+	"p2_d": [KEY_KP_4],
+	# 推进 F 的 2P 默认键为 Numpad 6(原 E 主键); E/F 主键已成对互换
+	"p2_e": [KEY_KP_5],
+	"p2_f": [KEY_KP_6],
+	# 2P START 用 Numpad 7: 避开 1P 的 Enter, 也不占用六个动作键的小键盘 1~6
+	"p2_start": [KEY_KP_7],
 	"ui_up": [KEY_UP],
 	"ui_down": [KEY_DOWN],
 	"ui_left": [KEY_LEFT],

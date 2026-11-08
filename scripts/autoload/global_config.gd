@@ -23,7 +23,9 @@ const COMBO_LINGER_SECONDS := 1.0
 const WALK_SPEED := 400.0
 const DASH_SPEED := 1000.0
 const DASH_DURATION := 0.15
-const DASH_BUFFER_FRAMES := 15      # 双击冲刺识别窗口(帧): 窗口内第二次同方向=冲刺
+# 双击冲刺识别窗口(帧): 窗口内第二次同方向=冲刺; 与 InputHandler.INPUT_BUFFER(按钮取消缓冲)
+#   同为 8 帧但语义独立, 分别调整互不影响
+const DASH_BUFFER_FRAMES := 8
 const JUMP_VELOCITY := -500.0
 const GRAVITY := 1200.0
 const MAX_FALL_SPEED := 800.0
