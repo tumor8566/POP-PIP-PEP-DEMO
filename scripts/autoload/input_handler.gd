@@ -33,8 +33,9 @@ const DEFAULT_MAP := {
 	"p1_b": [KEY_K],
 	"p1_c": [KEY_L],
 	"p1_d": [KEY_I],
-	"p1_e": [KEY_O],
-	"p1_f": [KEY_U],
+	# 推进 F 的 1P 默认键为 O(原 E 主键); E 与 F 互换, 保证六个动作键各占唯一键位
+	"p1_e": [KEY_U],
+	"p1_f": [KEY_O],
 	"p1_start": [KEY_ENTER],
 	"p2_left": [KEY_LEFT],
 	"p2_right": [KEY_RIGHT],
@@ -44,8 +45,9 @@ const DEFAULT_MAP := {
 	"p2_b": [KEY_KP_2, KEY_PERIOD],
 	"p2_c": [KEY_KP_3, KEY_SLASH],
 	"p2_d": [KEY_KP_4, KEY_APOSTROPHE],
-	"p2_e": [KEY_KP_6, KEY_P],
-	"p2_f": [KEY_KP_5, KEY_BACKSLASH],
+	# 推进 F 的 2P 默认键为 Numpad 6(原 E 主键); 副键与主键成对互换
+	"p2_e": [KEY_KP_5, KEY_BACKSLASH],
+	"p2_f": [KEY_KP_6, KEY_P],
 	"p2_start": [KEY_KP_ENTER, KEY_ENTER],
 	"ui_up": [KEY_UP],
 	"ui_down": [KEY_DOWN],

@@ -118,7 +118,7 @@ func _setup_training_panel() -> void:
 	vbox.add_child(hints)
 
 	var hint2 := Label.new()
-	hint2.text = "指令必杀技: 236/214/623 + A/B/C(招式数据由角色定义) · F=推进(30P)/脱离(50P)"
+	hint2.text = "必杀: 236/214/623 + A/B/C(角色定义) · 空中 A/B/C/D/E 与空中必杀(角色定义, 无数据则不触发) · F=推进(30P)/脱离(50P)"
 	hint2.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8, 1))
 	hint2.add_theme_font_size_override("font_size", 13)
 	vbox.add_child(hint2)

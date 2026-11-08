@@ -74,8 +74,15 @@ var advance_velocity := Vector2.ZERO
 const MOTION_QCF := [2, 3, 6]
 const MOTION_QCB := [2, 1, 4]
 const MOTION_DP := [6, 2, 3]
-# 指令 -> special_attacks 下标(顺序即默认优先级; 同时命中多个指令时取匹配结束最晚者=最新意图)
+# 指令 -> special_attacks / air_special_attacks 下标(顺序即默认优先级; 同时命中多个指令时取匹配结束最晚者=最新意图)
 const SPECIAL_MOTIONS := [MOTION_QCF, MOTION_QCB, MOTION_DP]
+
+# 空中可选模块的种类(用于多变体选择钩子 air_move_index 的 kind 参数)
+enum AirMoveKind {
+	GRAB,     # 空中抓取(D)
+	BLOCK,    # 空中格挡技(E)
+	SPECIAL,  # 空中必杀技(指令 + A/B/C)
+}
 
 # 允许被动回气的"自由/中立"状态(受击、攻击、倒地等不回气)
 const METER_REGEN_STATES := [
@@ -130,6 +137,13 @@ var special_attacks: Array = []
 var air_light_attacks: Array = []
 var air_medium_attacks: Array = []
 var air_heavy_attacks: Array = []
+# 空中抓取(JD) / 空中格挡技(JE) / 空中必杀技: 与空中通常技并列的可选模块
+#   数组长度 = 该角色拥有几个: 空 = 没有此模块, 1 个 = 一个, 多个 = 多个变体
+#   (变体下标由 air_move_index 钩子决定, 默认取基准下标)
+#   招式数据一律由用户/角色自行管理, 本模板不预置任何数据(三个数组默认为空)
+var air_grab_attacks: Array = []
+var air_block_attacks: Array = []
+var air_special_attacks: Array = []
 
 # 节点引用
 @onready var sprite: Sprite2D = $Sprite
@@ -225,11 +239,14 @@ func _setup_default_attacks() -> void:
 	atk_heavy.segments = [s_heavy]
 	heavy_attacks.append(atk_heavy)
 
-	# ============ 必杀技数据由用户自行管理 ============
-	#   每个角色的必杀技是不同的招式, 本模板不预置任何必杀技数据(special_attacks 保持为空);
-	#   指令识别已就绪: SPECIAL_MOTIONS 中第 i 条指令命中时取 special_attacks[i],
-	#   角色(或用户)向 special_attacks 追加自己的招式数据(下标 0/1/2/...)即使对应指令生效。
-	#   没有数据的指令不触发, 自然退化为通常技。
+	# ============ 必杀技 / 空中可选模块数据由用户自行管理 ============
+	#   每个角色的招式都不同, 本模板不预置任何数据, 以下四个数组均保持为空:
+	#     special_attacks(地面) / air_grab_attacks / air_block_attacks / air_special_attacks
+	#   地面: SPECIAL_MOTIONS 第 i 条指令命中 -> special_attacks[i];
+	#   空中: 同一指令 -> air_special_attacks[i](可经 air_move_index 改下标),
+	#         D -> air_grab_attacks, E -> air_block_attacks。
+	#   数组为空 = 该角色没有此模块, 对应输入不触发(自然退化为通常技);
+	#   数组可放任意个招式, 多个变体的选择规则由 air_move_index 钩子决定。
 
 	# ============ 抓取段(D 键): 需要被拆投(防御属性) + 抓取属性 ============
 	_grab_move_segment = AttackData.Segment.new()
@@ -660,6 +677,61 @@ func _recognized_special_index() -> int:
 	return best_index
 
 
+# ---------- 空中可选模块: 多变体选择与指令映射 ----------
+
+# 多变体选择钩子: 角色脚本可覆盖本方法, 或直接给 air_move_selector 赋值一个
+#   Callable(kind, base_index) -> int, 无需为每个角色建子类脚本。
+#   kind       = AirMoveKind(GRAB / BLOCK / SPECIAL)
+#   base_index = 框架基准下标: 抓取/格挡为 0, 必杀为 SPECIAL_MOTIONS 中的指令下标
+#   返回值     = 实际取用的 air_*_attacks 下标; 越界视为"本次输入无对应招式", 不触发
+#   默认返回 base_index; 角色可按方向/按键/状态/气量等任意规则挑变体,
+#   框架不预设方向映射, 也不规定变体顺序。
+var air_move_selector: Callable = Callable()
+
+
+func air_move_index(kind: int, base_index: int) -> int:
+	if air_move_selector.is_valid():
+		return int(air_move_selector.call(kind, base_index))
+	return base_index
+
+
+func _air_move_array(kind: int) -> Array:
+	match kind:
+		AirMoveKind.GRAB:
+			return air_grab_attacks
+		AirMoveKind.BLOCK:
+			return air_block_attacks
+		AirMoveKind.SPECIAL:
+			return air_special_attacks
+	return []
+
+
+# 数组为空(角色没有此模块)或下标越界时返回 null, 调用方据此不触发
+func _air_move_at(kind: int, data_index: int) -> AttackData:
+	var arr := _air_move_array(kind)
+	if data_index < 0 or data_index >= arr.size():
+		return null
+	return arr[data_index] as AttackData
+
+
+# 空中必杀指令识别: 返回 air_special_attacks 的实际下标
+#   与地面版一致: 多指令同时命中取匹配结束最晚者(最新意图);
+#   经 air_move_index 转换后没有招式数据的指令跳过 => 不触发, 退化为空中通常技
+func _recognized_air_special_index() -> int:
+	var best_index := -1
+	var best_end := -1
+	for i in SPECIAL_MOTIONS.size():
+		var end := _history_motion_end(SPECIAL_MOTIONS[i])
+		if end <= best_end:
+			continue
+		var idx := air_move_index(AirMoveKind.SPECIAL, i)
+		if idx < 0 or idx >= air_special_attacks.size():
+			continue
+		best_end = end
+		best_index = idx
+	return best_index
+
+
 # 升级时的视觉提示(Sprite 轻微放大脉冲 + 调试标签)
 func _flash_level_up() -> void:
 	_update_debug_label()
@@ -899,9 +971,26 @@ func _handle_universal_input() -> void:
 
 
 func _handle_attack_input(airborne := false) -> void:
-	# 空中(JA/JB/JC): 仅 A/B/C 空中通常技; 抓取/格挡/必杀指令在空中不成立
-	#   (JD 空中抓取/JE 空中格挡为后续内容; 空中必杀暂不支持, 退化为通常技)
+	# 空中触发优先级: 空中必杀(指令+A/B/C) -> 空中抓取(D) -> 空中格挡技(E) -> 空中通常技(A/B/C)
+	#   三个可选模块的数组为空 = 该角色没有此模块, 不触发并继续向下退化
 	if airborne:
+		# 空中必杀: 236/214/623 + A/B/C, 下标按指令映射(无数据不触发, 落到 JA/JB/JC)
+		if _any_attack_button_just_pressed():
+			var mi := _recognized_air_special_index()
+			if mi >= 0 and _try_start_air_special(mi):
+				return
+		# 空中抓取(JD) / 空中格挡技(JE)
+		if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.D):
+			var grab_atk := _air_move_at(AirMoveKind.GRAB, air_move_index(AirMoveKind.GRAB, 0))
+			if grab_atk:
+				_start_attack(FighterState.State.ATTACK_SPECIAL, grab_atk)
+				return
+		if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.E):
+			var block_atk := _air_move_at(AirMoveKind.BLOCK, air_move_index(AirMoveKind.BLOCK, 0))
+			if block_atk:
+				_start_attack(FighterState.State.ATTACK_SPECIAL, block_atk)
+				return
+		# 空中通常技(JA/JB/JC)
 		if InputHandler.is_just_pressed(player_id, InputHandler.InputButton.A):
 			_start_attack(FighterState.State.ATTACK_LIGHT, air_light_attacks[0] if air_light_attacks.size() > 0 else null)
 		elif InputHandler.is_just_pressed(player_id, InputHandler.InputButton.B):
@@ -946,7 +1035,7 @@ func _handle_attack_input(airborne := false) -> void:
 func _check_cancel_input() -> void:
 	# 取消链: 通常技(轻/中/重) -> 必杀技(236/214/623 + A/B/C, 链尾)
 	#   取消时同样走指令识别(不依赖组合键: A+B/B+C 已改为抓取/格挡技)
-	#   仅地面可取消进必杀(空中必杀暂不支持)
+	#   仅地面可取消进必杀; 空中三个模块由 _handle_attack_input(true) 独立触发, 不走取消链
 	if current_attack and current_attack.cancel_to_special \
 			and _is_grounded() \
 			and _any_attack_button_just_pressed():
@@ -1017,6 +1106,19 @@ func _try_start_special(motion_index: int) -> bool:
 		return false
 	_start_attack(FighterState.State.ATTACK_SPECIAL, special_attacks[motion_index])
 	# 消耗指令历史: 否则同一次输入在窗口内会重复触发(如取消连按两下出两个必杀)
+	InputHandler.clear_motion_history(player_id)
+	return true
+
+
+# 起手空中必杀: 指令检测与变体下标选择在调用处(_recognized_air_special_index)完成
+#   空中三个模块统一复用 ATTACK_SPECIAL 状态(已在攻击状态分发内, 走 _process_attack),
+#   招式性质由 AttackData 自身字段表达(attack_type / GRAB 属性 / 防御属性等),
+#   框架不新增或硬编码格挡、拆投状态。
+func _try_start_air_special(data_index: int) -> bool:
+	var atk := _air_move_at(AirMoveKind.SPECIAL, data_index)
+	if not atk:
+		return false
+	_start_attack(FighterState.State.ATTACK_SPECIAL, atk)
 	InputHandler.clear_motion_history(player_id)
 	return true
 
